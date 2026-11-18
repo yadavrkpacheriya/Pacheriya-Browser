@@ -144,7 +144,7 @@ public class MainActivity extends Activity {
     private float lastScale = 0f;
     private boolean immersive = false;
 
-    private void setImmersive(boolean b) {
+    private void setReadMode(boolean b) {
         immersive = b;
         if (inPip) return;
         bar.setVisibility(b ? View.GONE : View.VISIBLE);
@@ -630,7 +630,7 @@ public class MainActivity extends Activity {
 
             @Override public void onPageStarted(WebView v, String u, Bitmap f) {
                 t.url = u;
-                if (t == cur && immersive) setImmersive(false);
+                if (t == cur && immersive) setReadMode(false);
                 t.media.clear();
                 t.entries.clear(); t.covered.clear(); t.gen++; t.pending = 0; t.panelOpen = false; t.autoShown = false;
                 if (t == cur) {
@@ -1028,7 +1028,7 @@ public class MainActivity extends Activity {
         @JavascriptInterface public String pre(String host) { return topOrigins(host); }
         @JavascriptInterface public boolean prev() { return autoPrev; }
         @JavascriptInterface public void chrome(final boolean hide) {
-            ui.post(new Runnable() { public void run() { if (t == cur) setImmersive(hide); } });
+            ui.post(new Runnable() { public void run() { if (t == cur) setReadMode(hide); } });
         }
         @JavascriptInterface public void subInit(final String model) {
             ui.post(new Runnable() { public void run() { subTab = t; subCall("init", "'" + model.replaceAll("[^a-z]", "") + "'"); } });
@@ -1519,7 +1519,7 @@ public class MainActivity extends Activity {
 
     @Override public void onBackPressed() {
         if (customView != null) { exitFullscreen(); return; }
-        if (immersive && cur != null) { cur.wv.evaluateJavascript("(function(){if(window.__vpReader&&window.__vpReader.on){window.__vpReader.toggle();return 1}return 0})()", new android.webkit.ValueCallback<String>() { public void onReceiveValue(String r) { setImmersive(false); if (!"1".equals(r) && cur != null && cur.wv.canGoBack()) cur.wv.goBack(); } }); return; }
+        if (immersive && cur != null) { cur.wv.evaluateJavascript("(function(){if(window.__vpReader&&window.__vpReader.on){window.__vpReader.toggle();return 1}return 0})()", new android.webkit.ValueCallback<String>() { public void onReceiveValue(String r) { setReadMode(false); if (!"1".equals(r) && cur != null && cur.wv.canGoBack()) cur.wv.goBack(); } }); return; }
         if (cur != null && cur.wv.canGoBack()) { cur.wv.goBack(); return; }
         if (tabs.size() > 1) { closeTab(cur); return; }
         moveTaskToBack(true);

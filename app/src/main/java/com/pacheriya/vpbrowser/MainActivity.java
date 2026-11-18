@@ -142,6 +142,36 @@ public class MainActivity extends Activity {
         @Override public void onAccuracyChanged(Sensor s, int a) { }
     };
     private float lastScale = 0f;
+    private WebView subWv;
+    private Tab subTab;
+
+    private void subCall(String fn, String args) {
+        try {
+            if (subWv == null) {
+                subWv = new WebView(this);
+                WebSettings ss = subWv.getSettings();
+                ss.setJavaScriptEnabled(true);
+                ss.setDomStorageEnabled(true);
+                ss.setAllowFileAccess(true);
+                ss.setMediaPlaybackRequiresUserGesture(false);
+                subWv.addJavascriptInterface(new SubBridge(), "SubApp");
+                subWv.loadUrl("file:///android_asset/sub.html");
+                addContentView(subWv, new android.widget.FrameLayout.LayoutParams(1, 1));
+            }
+            subWv.evaluateJavascript("(function f(){if(window.__ok)window.__" + fn + "(" + args + ");else setTimeout(f,400)})()", null);
+        } catch (Throwable e) { subPush("{\"t\":\"err\",\"msg\":\"engine could not start\"}"); }
+    }
+
+    private void subPush(final String json) {
+        ui.post(new Runnable() { public void run() { try { if (subTab != null) subTab.wv.evaluateJavascript("window.__vpSub&&window.__vpSub(" + json + ")", null); } catch (Throwable e) { /* ignore */ } } });
+    }
+
+    private class SubBridge {
+        @JavascriptInterface public void prog(int p) { subPush("{\"t\":\"prog\",\"p\":" + p + "}"); }
+        @JavascriptInterface public void ready() { subPush("{\"t\":\"ready\"}"); }
+        @JavascriptInterface public void err(String m) { subPush("{\"t\":\"err\",\"msg\":" + org.json.JSONObject.quote(m == null ? "" : m) + "}"); }
+        @JavascriptInterface public void res(String j) { subPush(j); }
+    }
     private boolean playing = false, inPip = false, desktop = false, adblock = true, scripts = true;
     private boolean autoPrev = true;
     private String readerJs = "";
@@ -986,6 +1016,12 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface public String pre(String host) { return topOrigins(host); }
         @JavascriptInterface public boolean prev() { return autoPrev; }
+        @JavascriptInterface public void subInit(final String model) {
+            ui.post(new Runnable() { public void run() { subTab = t; subCall("init", "'" + model.replaceAll("[^a-z]", "") + "'"); } });
+        }
+        @JavascriptInterface public void subGo(final double t0, final String b64) {
+            ui.post(new Runnable() { public void run() { subTab = t; subCall("go", t0 + ",'" + b64 + "'"); } });
+        }
         @JavascriptInterface public float getVol() {
             try { android.media.AudioManager am = (android.media.AudioManager) getSystemService(AUDIO_SERVICE); return am.getStreamVolume(android.media.AudioManager.STREAM_MUSIC) / (float) am.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC); } catch (Throwable e) { return -1f; }
         }

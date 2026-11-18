@@ -354,6 +354,8 @@
   var SUB_WORKER = "import {pipeline,env} from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3';env.allowLocalModels=false;var asr=null;" +
     "self.onmessage=async function(e){var m=e.data;try{if(m.t==='init'){asr=await pipeline('automatic-speech-recognition','onnx-community/whisper-'+m.model,{device:'wasm',dtype:'q8',progress_callback:function(p){if(p.status==='progress')self.postMessage({t:'prog',p:Math.round(p.progress)})}});self.postMessage({t:'ready'});}" +
     "else{var t1=Date.now();var o=await asr(m.a,{task:'translate',return_timestamps:true});self.postMessage({t:'res',t0:m.t0,dur:m.a.length/16000,ms:Date.now()-t1,chunks:o.chunks||[],text:o.text||''});}}catch(err){self.postMessage({t:'err',msg:String((err&&err.message)||err)})}};";
+  if (window === window.top) window.__vpSub = function (m) { window.__vpSubH && window.__vpSubH(m); var fr = document.getElementsByTagName('iframe'); for (var q = 0; q < fr.length; q++) { try { fr[q].contentWindow.postMessage({ __vpSubRes: 1, m: m }, '*'); } catch (e) {} } };
+  window.addEventListener('message', function (e) { var d = e.data; if (d && d.__vpSubRes && window.__vpSubH) window.__vpSubH(d.m); });
   function subOff(msg) {
     if (sub) { try { sub.sp.disconnect(); } catch (e) {} try { sub.w.terminate(); } catch (e) {} sub = null; }
     subSt = msg || 'off'; var c = $('#vp-cap'); if (c) c.style.display = 'none';
@@ -363,8 +365,19 @@
     if (!boostable(v)) { subSt = 'not possible (site does not let the page read its audio)'; say('Subtitles not possible on this site', 2500); return; }
     var n; try { n = graph(v); if (AC.state === 'suspended') AC.resume(); } catch (e) { subSt = 'not possible (audio blocked)'; say('Subtitles not possible on this site', 2500); return; }
     var w;
-    try { w = new Worker(URL.createObjectURL(new Blob([SUB_WORKER], { type: 'text/javascript' })), { type: 'module' }); }
-    catch (e) { subSt = 'blocked by this site security'; say('This site blocks the subtitle engine', 2500); return; }
+    if (window.VPApp && VPApp.subInit) {
+      /* engine runs inside the app itself, so site security rules cannot block it */
+      w = { terminate: function () { window.__vpSubH = null; }, postMessage: function (m) {
+        if (m.t === 'init') VPApp.subInit(m.model);
+        else if (m.t === 'go') { var a = m.a, n = a.length, u = new Uint8Array(n * 2), s = '', C = 0x8000;
+          for (var i = 0; i < n; i++) { var x = Math.max(-1, Math.min(1, a[i])); x = (x < 0 ? x * 32768 : x * 32767) | 0; u[2 * i] = x & 255; u[2 * i + 1] = (x >> 8) & 255; }
+          for (var j = 0; j < u.length; j += C) s += String.fromCharCode.apply(null, u.subarray(j, j + C));
+          VPApp.subGo(m.t0, btoa(s)); } } };
+      window.__vpSubH = function (m) { if (w.onmessage) w.onmessage({ data: m }); };
+    } else {
+      try { w = new Worker(URL.createObjectURL(new Blob([SUB_WORKER], { type: 'text/javascript' })), { type: 'module' }); }
+      catch (e) { subSt = 'blocked by this site security'; say('This site blocks the subtitle engine', 2500); return; }
+    }
     var tr = v.addTextTrack('subtitles', 'AI English', 'en'); tr.mode = 'showing';
     var sp = AC.createScriptProcessor(4096, 1, 1), ratio = AC.sampleRate / 16000, parts = [], len = 0, t0 = 0, busy = false, queue = [], ready = false, capT, run = 0, quiet = 0, lastTx = '', model = S.model || 'base';
     sub = { w: w, sp: sp, v: v, tr: tr }; subSt = 'loading ' + model + ' engine...';

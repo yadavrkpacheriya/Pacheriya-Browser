@@ -974,6 +974,32 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface public String pre(String host) { return topOrigins(host); }
         @JavascriptInterface public boolean prev() { return autoPrev; }
+        @JavascriptInterface public void http(final int id, final String url) {
+            if (t.url == null || !t.url.startsWith("file:///android_asset/") || url == null || !url.startsWith("https://api.mangadex.org/")) return;
+            new Thread(new Runnable() {
+                public void run() {
+                    boolean ok = false;
+                    String body = "";
+                    try {
+                        java.net.HttpURLConnection h = (java.net.HttpURLConnection) new java.net.URL(url).openConnection();
+                        h.setConnectTimeout(12000);
+                        h.setReadTimeout(25000);
+                        h.setRequestProperty("User-Agent", "VideoPlusBrowser/1.0 (personal reader)");
+                        int code = h.getResponseCode();
+                        java.io.InputStream in = code >= 400 ? h.getErrorStream() : h.getInputStream();
+                        java.io.ByteArrayOutputStream bo = new java.io.ByteArrayOutputStream();
+                        byte[] b = new byte[16384];
+                        int n;
+                        while (in != null && (n = in.read(b)) > 0) bo.write(b, 0, n);
+                        body = bo.toString("UTF-8");
+                        ok = code < 400;
+                    } catch (Exception e) { ok = false; }
+                    final boolean fok = ok;
+                    final String fb = body;
+                    ui.post(new Runnable() { public void run() { try { t.wv.evaluateJavascript("window.__vpHttp&&window.__vpHttp(" + id + "," + fok + "," + org.json.JSONObject.quote(fb) + ")", null); } catch (Exception e) { /* ignore */ } } });
+                }
+            }).start();
+        }
         @JavascriptInterface public void toast(final String s) { ui.post(new Runnable() { public void run() { MainActivity.this.toast(s); } }); }
         @JavascriptInterface public void trAsync(final int id, final String text, final String tl) {
             new Thread(new Runnable() {

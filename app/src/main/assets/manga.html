@@ -1,0 +1,61 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Manga reader</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#0f0f14;color:#eee;font-family:system-ui,sans-serif;padding-bottom:70px}
+.top{position:sticky;top:0;background:#0f0f14;padding:10px;z-index:5;border-bottom:1px solid #222}
+.top form{display:flex;gap:8px}.top input{flex:1;min-width:0;padding:11px 16px;border-radius:22px;border:1px solid #333;background:#1c1c24;color:#fff;font-size:15px}
+.top button,.b{background:#2b2b36;color:#fff;border:0;border-radius:18px;padding:10px 14px;font-size:14px}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;font-size:12px}.chip{padding:6px 10px;border-radius:14px;background:#22222c;color:#aab}.chip.on{background:#6c4dff;color:#fff}
+select{background:#22222c;color:#fff;border:0;border-radius:14px;padding:6px 8px;font-size:12px}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;padding:10px}
+.card{background:#17171e;border-radius:10px;overflow:hidden}.card img{width:100%;aspect-ratio:2/3;object-fit:cover;display:block;background:#222}
+.card div{padding:7px 8px;font-size:13px;line-height:1.3;max-height:3.6em;overflow:hidden}
+h2{font-size:15px;margin:14px 12px 4px;color:#b9a8ff}
+.det{padding:12px}.det img{width:120px;float:left;margin:0 12px 8px 0;border-radius:8px}.det p{font-size:13.5px;color:#bbb;line-height:1.5}
+.ch{display:flex;justify-content:space-between;padding:13px 12px;border-bottom:1px solid #1d1d25;font-size:14px}.ch.done{color:#667}
+.rd img{width:100%;display:block;min-height:200px;background:#111}.bar{position:fixed;left:0;right:0;bottom:0;display:flex;gap:8px;justify-content:center;padding:8px;background:#0f0f14ee;z-index:9}
+.msg{padding:30px 16px;text-align:center;color:#99a}
+#gate{position:fixed;inset:0;background:#0f0f14;z-index:20;display:none;padding:40px 24px;text-align:center}
+</style></head><body>
+<div id="gate"><h2 style="color:#fff;font-size:20px">Adult content</h2><p style="color:#aab">This reader can show adult (18+) manga. Show it only if you are 18 or older.</p><p><button class="b" id="g18" style="background:#6c4dff">I am 18 or older - show adult</button></p><p><button class="b" id="gsafe">Keep safe content only</button></p></div>
+<div class="top"><form id="sf"><input id="q" placeholder="Search manga, manhwa, manhua, comics" autocomplete="off"><button>Go</button></form>
+<div class="chips" id="chips"></div></div>
+<div id="v"></div><div class="bar" id="bar" style="display:none"></div>
+<script>
+var $=function(s){return document.querySelector(s)},cbs={},nn=0,LS=function(k,d){try{var v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}},SV=function(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}};
+window.__vpHttp=function(id,ok,t){var f=cbs[id];delete cbs[id];if(f)f(ok,t)};
+function api(p,cb){var id=++nn;cbs[id]=function(ok,t){if(!ok)return cb(null);try{cb(JSON.parse(t))}catch(e){cb(null)}};try{VPApp.http(id,'https://api.mangadex.org'+p)}catch(e){cb(null)}}
+var RT=['safe','suggestive','erotica','pornographic'],RN={safe:'Safe',suggestive:'Suggestive',erotica:'Erotica 18+',pornographic:'Adult 18+'};
+var rat=LS('rat',['safe','suggestive']),lang=LS('lang','en'),saver=LS('saver',false),LGS=['en','hi','ja','ko','zh','es','fr','pt-br','ru','id','ar'];
+function A(k,a){return a.map(function(v){return k+'%5B%5D='+encodeURIComponent(v)}).join('&')}
+function chips(){var h='';RT.forEach(function(r){h+='<span class="chip '+(rat.indexOf(r)>=0?'on':'')+'" data-r="'+r+'">'+RN[r]+'</span>'});
+h+='<select id="lg">'+LGS.map(function(l){return '<option '+(l==lang?'selected':'')+'>'+l+'</option>'}).join('')+'</select><span class="chip '+(saver?'on':'')+'" id="sv">Data saver</span><span class="chip" id="lib">Library</span>';
+$('#chips').innerHTML=h;
+Array.prototype.forEach.call(document.querySelectorAll('[data-r]'),function(c){c.onclick=function(){var r=c.dataset.r,i=rat.indexOf(r);if(i>=0)rat.splice(i,1);else{if(r.charAt(0)=='e'||r.charAt(0)=='p'){if(!LS('age18',false)){$('#gate').style.display='block';return}}rat.push(r)}if(!rat.length)rat=['safe'];SV('rat',rat);chips();route()}});
+$('#lg').onchange=function(){lang=this.value;SV('lang',lang);route()};$('#sv').onclick=function(){saver=!saver;SV('saver',saver);chips()};$('#lib').onclick=function(){location.hash='#l'}}
+$('#g18').onclick=function(){SV('age18',true);if(rat.indexOf('erotica')<0)rat.push('erotica');if(rat.indexOf('pornographic')<0)rat.push('pornographic');SV('rat',rat);$('#gate').style.display='none';chips();route()};
+$('#gsafe').onclick=function(){$('#gate').style.display='none'};
+function ttl(m){var t=m.attributes.title,k=Object.keys(t);return t.en||t[k[0]]||'Untitled'}
+function cover(m){var c=(m.relationships||[]).filter(function(r){return r.type=='cover_art'})[0];return c&&c.attributes?'https://uploads.mangadex.org/covers/'+m.id+'/'+c.attributes.fileName+'.256.jpg':''}
+function grid(list,el){var g=document.createElement('div');g.className='grid';list.forEach(function(m){var c=document.createElement('div');c.className='card';c.innerHTML='<img loading="lazy"><div></div>';c.firstChild.src=m.cv||cover(m);c.lastChild.textContent=m.tt||ttl(m);c.onclick=function(){location.hash='#m/'+m.id};g.appendChild(c)});el.appendChild(g)}
+function msg(t){$('#v').innerHTML='<div class="msg">'+t+'</div>'}
+function browse(q){$('#bar').style.display='none';msg('Loading...');
+var p='/manga?limit=40&includes%5B%5D=cover_art&'+A('contentRating',rat)+'&'+A('availableTranslatedLanguage',[lang])+(q?'&title='+encodeURIComponent(q)+'&order%5Brelevance%5D=desc':'&order%5BfollowedCount%5D=desc');
+api(p,function(j){if(!j||!j.data)return msg('Could not load. Check the internet and try again.');var v=$('#v');v.innerHTML='';if(!j.data.length)return msg('Nothing found. Try another word, another language, or turn on more content types above.');var h=document.createElement('h2');h.textContent=q?'Results for "'+q+'"':'Popular now';v.appendChild(h);grid(j.data,v)})}
+function library(){$('#bar').style.display='none';var l=LS('lib',[]),v=$('#v');v.innerHTML='<h2>Library</h2>';if(!l.length)return v.insertAdjacentHTML('beforeend','<div class="msg">Nothing saved yet. Open a manga and tap Add to library.</div>');grid(l.map(function(x){return{id:x.id,tt:x.t,cv:x.c,attributes:{title:{en:x.t}}}}),v)}
+function detail(id){$('#bar').style.display='none';msg('Loading...');
+api('/manga/'+id+'?includes%5B%5D=cover_art',function(j){if(!j||!j.data)return msg('Could not load this title.');var m=j.data,v=$('#v'),inLib=LS('lib',[]).some(function(x){return x.id==id}),d=m.attributes.description||{};
+v.innerHTML='<div class="det"><img src="'+cover(m).replace('.256.','.512.')+'"><b></b><p></p><button class="b" id="al"></button></div><div style="clear:both"></div><h2>Chapters ('+lang+')</h2><div id="cl"><div class="msg">Loading chapters...</div></div>';
+v.querySelector('b').textContent=ttl(m);v.querySelector('p').textContent=d.en||d[Object.keys(d)[0]]||'';
+var al=$('#al');al.textContent=inLib?'Remove from library':'Add to library';al.onclick=function(){var l=LS('lib',[]);if(l.some(function(x){return x.id==id}))l=l.filter(function(x){return x.id!=id});else l.push({id:id,t:ttl(m),c:cover(m)});SV('lib',l);detail(id)};
+var all=[],get=function(off){api('/manga/'+id+'/feed?limit=500&offset='+off+'&order%5Bchapter%5D=asc&includeExternalUrl=0&'+A('translatedLanguage',[lang])+'&'+A('contentRating',RT),function(c){if(!c||!c.data)return $('#cl').innerHTML='<div class="msg">No chapters in this language. Try another language above.</div>';all=all.concat(c.data);if(all.length<c.total&&c.data.length)return get(off+500);
+var cl=$('#cl'),done=LS('done',{});cl.innerHTML='';all=all.filter(function(x){return !x.attributes.externalUrl&&x.attributes.pages>0});if(!all.length)return cl.innerHTML='<div class="msg">No readable chapters in this language.</div>';
+all.forEach(function(x,i){var d=document.createElement('div');d.className='ch'+(done[x.id]?' done':'');d.innerHTML='<span></span><span></span>';d.firstChild.textContent='Ch '+(x.attributes.chapter||'?')+(x.attributes.title?' - '+x.attributes.title:'');d.lastChild.textContent=x.attributes.pages+' p';d.onclick=function(){SV('chs',all.map(function(y){return y.id}));location.hash='#r/'+x.id+'/'+id};cl.appendChild(d)})})};get(0)})}
+function read(ch,mid){msg('Loading pages...');api('/at-home/server/'+ch,function(j){if(!j||!j.chapter)return msg('Could not load this chapter. Go back and try again.');var d=saver?j.chapter.dataSaver:j.chapter.data,fd=saver?'data-saver':'data',v=$('#v');v.innerHTML='<div class="rd"></div>';
+var rd=v.firstChild;d.forEach(function(f){var i=document.createElement('img');i.loading='lazy';i.src=j.baseUrl+'/'+fd+'/'+j.chapter.hash+'/'+f;rd.appendChild(i)});
+var dn=LS('done',{});dn[ch]=1;SV('done',dn);window.scrollTo(0,0);
+var ids=LS('chs',[]),k=ids.indexOf(ch),bar=$('#bar');bar.style.display='flex';bar.innerHTML='<button class="b" id="pv">Prev</button><button class="b" id="bk">List</button><button class="b" id="nx">Next</button>';
+$('#pv').onclick=function(){if(k>0)location.replace('#r/'+ids[k-1]+'/'+mid);else history.back()};$('#nx').onclick=function(){if(k>=0&&k<ids.length-1)location.replace('#r/'+ids[k+1]+'/'+mid);else history.back()};$('#bk').onclick=function(){history.back()}})}
+function route(){var h=location.hash.slice(1),p=h.split('/');if(p[0]=='m')detail(p[1]);else if(p[0]=='r')read(p[1],p[2]);else if(p[0]=='l')library();else if(p[0]=='s')browse(decodeURIComponent(p.slice(1).join('/')));else browse('')}
+$('#sf').onsubmit=function(e){e.preventDefault();var q=$('#q').value.trim();location.hash=q?'#s/'+encodeURIComponent(q):'';if(!q)route();return false};
+window.addEventListener('hashchange',route);chips();if(!LS('gateSeen',false)){SV('gateSeen',true);$('#gate').style.display='block'}route();
+</script></body></html>

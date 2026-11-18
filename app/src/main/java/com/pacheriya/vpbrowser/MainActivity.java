@@ -146,6 +146,7 @@ public class MainActivity extends Activity {
             }
         });
         updateScriptInBackground();
+        ui.postDelayed(new Runnable() { public void run() { Updater.check(MainActivity.this, false); } }, 4000);
     }
 
     private void updateScriptInBackground() {
@@ -593,7 +594,8 @@ public class MainActivity extends Activity {
         m.getMenu().add(0, 8, 7, "Copy link");
         m.getMenu().add(0, 9, 8, "Share link");
         m.getMenu().add(0, 11, 9, "Video Plus scripts").setCheckable(true).setChecked(scripts);
-        m.getMenu().add(0, 10, 10, "Exit");
+        m.getMenu().add(0, 12, 10, "Check for app update");
+        m.getMenu().add(0, 10, 11, "Exit");
         m.setOnMenuItemClickListener(new PopupMenu.OnMenuItemClickListener() {
             public boolean onMenuItemClick(android.view.MenuItem it) {
                 switch (it.getItemId()) {
@@ -644,6 +646,7 @@ public class MainActivity extends Activity {
                         toast(scripts ? "Video Plus scripts on" : "Video Plus scripts off");
                         cur.wv.reload();
                         break;
+                    case 12: Updater.check(MainActivity.this, true); break;
                     case 10: finishAndRemoveTask(); break;
                 }
                 return true;

@@ -1,4 +1,5 @@
 plugins { id 'com.android.application' }
+def vCode = (project.findProperty('vCode') ?: '1').toInteger()
 android {
     namespace 'com.pacheriya.vpbrowser'
     compileSdk 34
@@ -6,10 +7,18 @@ android {
         applicationId 'com.pacheriya.vpbrowser'
         minSdk 30
         targetSdk 34
-        versionCode 1
-        versionName '1.0'
+        versionCode vCode
+        versionName '1.0.' + vCode
     }
-    buildTypes { release { minifyEnabled false } }
+    signingConfigs {
+        rel {
+            storeFile file('vp.jks')
+            storePassword 'vpbrowser'
+            keyAlias 'vp'
+            keyPassword 'vpbrowser'
+        }
+    }
+    buildTypes { release { minifyEnabled false; signingConfig signingConfigs.rel } }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
     lint { checkReleaseBuilds false; abortOnError false }
 }

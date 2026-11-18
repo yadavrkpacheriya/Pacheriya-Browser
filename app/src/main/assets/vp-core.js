@@ -1,5 +1,23 @@
 (function () {
   if (window.__vpCore) return; window.__vpCore = 1;
+  /* 0. speed: warm connections to the sites this page used last time, and prefetch a link when it is touched */
+  try {
+    if (window === window.top) {
+      var pre = (window.VPApp && VPApp.pre) ? VPApp.pre(location.hostname) : '';
+      if (pre) pre.split(',').forEach(function (x, i) {
+        var l = document.createElement('link'); l.rel = i < 4 ? 'preconnect' : 'dns-prefetch'; l.href = x;
+        (document.head || document.documentElement).appendChild(l);
+      });
+    }
+    document.addEventListener('touchstart', function (e) {
+      var a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
+      if (!a || a.__vpPf) return;
+      var h = a.href; if (!/^https?:/.test(h) || h === location.href) return;
+      a.__vpPf = 1;
+      var l = document.createElement('link'); l.rel = 'prefetch'; l.href = h;
+      (document.head || document.documentElement).appendChild(l);
+    }, { passive: true, capture: true });
+  } catch (e) {}
   /* 1. background play: only while the app is in the background, pages are told they are still visible */
   window.__vpBg = false;
   var bg = function () { try { return window.__vpBg || window.top.__vpBg; } catch (e) { return window.__vpBg; } };

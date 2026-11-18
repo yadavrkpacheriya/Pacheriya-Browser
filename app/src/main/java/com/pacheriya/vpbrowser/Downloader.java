@@ -159,6 +159,23 @@ final class Downloader {
         return iv;
     }
 
+    private static byte[] fetchSeg(String url, String ku, String iv, long seq, String ua, String ref, java.util.concurrent.ConcurrentHashMap<String, byte[]> keys) throws Exception {
+        byte[] data = null;
+        Exception last = null;
+        for (int t = 0; t < 3; t++) {
+            try { data = getBytes(url, ua, ref); last = null; break; } catch (Exception e) { last = e; }
+        }
+        if (last != null) throw last;
+        if (ku != null) {
+            byte[] kb = keys.get(ku);
+            if (kb == null) { kb = getBytes(ku, ua, ref); keys.put(ku, kb); }
+            Cipher ci = Cipher.getInstance("AES/CBC/PKCS5Padding");
+            ci.init(Cipher.DECRYPT_MODE, new SecretKeySpec(kb, "AES"), new IvParameterSpec(ivFor(iv, seq)));
+            data = ci.doFinal(data);
+        }
+        return data;
+    }
+
     static void hls(final Context ctx, final String mediaUrl, final String ua, final String ref, final String baseName) {
         BgService.acquire(ctx);
         new Thread(new Runnable() {
@@ -202,23 +219,33 @@ final class Downloader {
                     Uri uri = ctx.getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, cv);
                     if (uri == null) throw new Exception("cannot create file");
                     OutputStream os = ctx.getContentResolver().openOutputStream(uri);
-                    String lastKeyUri = null;
-                    byte[] keyBytes = null;
-                    int total = segs.size();
-                    for (int i = 0; i < total; i++) {
-                        byte[] data = getBytes(segs.get(i), ua, ref);
-                        String ku = segKeyUri.get(i);
-                        if (ku != null) {
-                            if (!ku.equals(lastKeyUri)) { keyBytes = getBytes(ku, ua, ref); lastKeyUri = ku; }
-                            Cipher ci = Cipher.getInstance("AES/CBC/PKCS5Padding");
-                            ci.init(Cipher.DECRYPT_MODE, new SecretKeySpec(keyBytes, "AES"), new IvParameterSpec(ivFor(segKeyIv.get(i), segSeq.get(i))));
-                            data = ci.doFinal(data);
+                    final int total = segs.size();
+                    final java.util.concurrent.ConcurrentHashMap<String, byte[]> keys = new java.util.concurrent.ConcurrentHashMap<String, byte[]>();
+                    java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(8);
+                    List<java.util.concurrent.Future<byte[]>> fs = new ArrayList<java.util.concurrent.Future<byte[]>>();
+                    int w = 0;
+                    try {
+                        for (int i = 0; i <= total; i++) {
+                            if (i < total) {
+                                final String su = segs.get(i), ku = segKeyUri.get(i), iv = segKeyIv.get(i);
+                                final long sq = segSeq.get(i);
+                                fs.add(pool.submit(new java.util.concurrent.Callable<byte[]>() {
+                                    public byte[] call() throws Exception { return fetchSeg(su, ku, iv, sq, ua, ref, keys); }
+                                }));
+                            }
+                            while (w < fs.size() && (fs.size() - w >= 20 || i == total)) {
+                                byte[] data;
+                                try { data = fs.get(w).get(); }
+                                catch (java.util.concurrent.ExecutionException ee) { throw new Exception(String.valueOf(ee.getCause() != null ? ee.getCause().getMessage() : ee.getMessage())); }
+                                os.write(data);
+                                fs.set(w, null);
+                                w++;
+                                Notification n = new Notification.Builder(ctx, "dl").setSmallIcon(android.R.drawable.stat_sys_download)
+                                    .setContentTitle(fn).setContentText(w + " / " + total).setProgress(total, w, false).setOngoing(true).build();
+                                nm.notify(id, n);
+                            }
                         }
-                        os.write(data);
-                        Notification n = new Notification.Builder(ctx, "dl").setSmallIcon(android.R.drawable.stat_sys_download)
-                            .setContentTitle(fn).setContentText((i + 1) + " / " + total).setProgress(total, i + 1, false).setOngoing(true).build();
-                        nm.notify(id, n);
-                    }
+                    } finally { pool.shutdownNow(); }
                     os.close();
                     Notification done = new Notification.Builder(ctx, "dl").setSmallIcon(android.R.drawable.stat_sys_download_done)
                         .setContentTitle(fn).setContentText("Saved in Downloads/VideoPlus (.ts file - play with VLC or MX Player)").build();

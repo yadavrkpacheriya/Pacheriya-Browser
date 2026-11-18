@@ -104,6 +104,33 @@ public class MainActivity extends Activity {
     private volatile long lastPlayTs = 0;
     private boolean playing = false, inPip = false, desktop = false, adblock = true, scripts = true;
     private String injected = "", defaultUa = "", desktopUa = "";
+    private static final java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.ConcurrentHashMap<String, Integer>> ORIGINS = new java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.ConcurrentHashMap<String, Integer>>();
+    private static String hostOf(String u) { try { return Uri.parse(u).getHost(); } catch (Exception e) { return null; } }
+    private static void noteOrigin(String page, String req) {
+        try {
+            String ph = hostOf(page);
+            Uri ru = Uri.parse(req);
+            if (ph == null || ru.getHost() == null || ru.getScheme() == null || !ru.getScheme().startsWith("http")) return;
+            String o = ru.getScheme() + "://" + ru.getHost();
+            if (ru.getHost().equals(ph)) return;
+            java.util.concurrent.ConcurrentHashMap<String, Integer> m = ORIGINS.get(ph);
+            if (m == null) { m = new java.util.concurrent.ConcurrentHashMap<String, Integer>(); ORIGINS.put(ph, m); }
+            Integer c = m.get(o);
+            if (c == null && m.size() >= 40) return;
+            m.put(o, c == null ? 1 : c + 1);
+        } catch (Exception e) { /* ignore */ }
+    }
+    private static String topOrigins(String host) {
+        java.util.concurrent.ConcurrentHashMap<String, Integer> m = ORIGINS.get(host);
+        if (m == null) return "";
+        List<java.util.Map.Entry<String, Integer>> es = new ArrayList<java.util.Map.Entry<String, Integer>>(m.entrySet());
+        java.util.Collections.sort(es, new java.util.Comparator<java.util.Map.Entry<String, Integer>>() {
+            public int compare(java.util.Map.Entry<String, Integer> a, java.util.Map.Entry<String, Integer> b) { return b.getValue() - a.getValue(); }
+        });
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < es.size() && i < 8; i++) { if (i > 0) sb.append(','); sb.append(es.get(i).getKey()); }
+        return sb.toString();
+    }
     private boolean dark = false, httpsUp = true, saver = false;
     private int textZoom = 100;
     private String engine = "google";
@@ -424,6 +451,7 @@ public class MainActivity extends Activity {
         w.setWebViewClient(new WebViewClient() {
             @Override public WebResourceResponse shouldInterceptRequest(WebView v, WebResourceRequest r) {
                 final String u = r.getUrl().toString();
+                if (!r.isForMainFrame() && t.url != null && !(adblock && AdBlock.blocked(u))) noteOrigin(t.url, u);
                 if (adblock && AdBlock.blocked(u)) {
                     return new WebResourceResponse("text/plain", "utf-8", new ByteArrayInputStream(new byte[0]));
                 }
@@ -846,6 +874,7 @@ public class MainActivity extends Activity {
             ui.post(new Runnable() { public void run() { addMedia(t, uu); } });
         }
 
+        @JavascriptInterface public String pre(String host) { return topOrigins(host); }
         @JavascriptInterface public void playing(boolean p) { if (p) lastPlayTs = SystemClock.uptimeMillis(); }
     }
 
@@ -955,6 +984,8 @@ public class MainActivity extends Activity {
         }
         else if (!q.contains(" ") && q.contains(".")) url = "https://" + q;
         else url = searchBase() + Uri.encode(q);
+        final String hh = hostOf(url);
+        if (hh != null) new Thread(new Runnable() { public void run() { try { java.net.InetAddress.getAllByName(hh); } catch (Exception e) { /* ignore */ } } }).start();
         cur.wv.loadUrl(upgrade(cur, url));
     }
 

@@ -52,12 +52,22 @@ ld($('#dc'),cover(m).replace('.256.','.512.'));var al=$('#al');al.textContent=in
 var all=[],get=function(off){api('/manga/'+id+'/feed?limit=500&offset='+off+'&order%5Bchapter%5D=asc&includeExternalUrl=0&'+A('translatedLanguage',[lang])+'&'+A('contentRating',RT),function(c){if(!c||!c.data)return $('#cl').innerHTML='<div class="msg">No chapters in this language. Try another language above.</div>';all=all.concat(c.data);if(all.length<c.total&&c.data.length)return get(off+500);
 var cl=$('#cl'),done=LS('done',{});cl.innerHTML='';all=all.filter(function(x){return !x.attributes.externalUrl&&x.attributes.pages>0});if(!all.length)return cl.innerHTML='<div class="msg">No readable chapters in this language.</div>';
 all.forEach(function(x,i){var d=document.createElement('div');d.className='ch'+(done[x.id]?' done':'');d.innerHTML='<span></span><span></span>';d.firstChild.textContent='Ch '+(x.attributes.chapter||'?')+(x.attributes.title?' - '+x.attributes.title:'');d.lastChild.textContent=x.attributes.pages+' p';d.onclick=function(){SV('chs',all.map(function(y){return y.id}));location.hash='#r/'+x.id+'/'+id};cl.appendChild(d)})})};get(0)})}
-function read(ch,mid){msg('Loading pages...');api('/at-home/server/'+ch,function(j){if(!j||!j.chapter)return msg('Could not load this chapter. Go back and try again.');var d=saver?j.chapter.dataSaver:j.chapter.data,fd=saver?'data-saver':'data',v=$('#v');v.innerHTML='<div class="rd"></div>';
-var rd=v.firstChild;d.forEach(function(f){var i=document.createElement('img');i.loading='lazy';ld(i,j.baseUrl+'/'+fd+'/'+j.chapter.hash+'/'+f);rd.appendChild(i)});
-var dn=LS('done',{});dn[ch]=1;SV('done',dn);window.scrollTo(0,0);
-var ids=LS('chs',[]),k=ids.indexOf(ch),bar=$('#bar');bar.style.display='flex';bar.innerHTML='<button class="b" id="pv">Prev</button><button class="b" id="bk">List</button><button class="b" id="nx">Next</button>';
-$('#pv').onclick=function(){if(k>0)location.replace('#r/'+ids[k-1]+'/'+mid);else history.back()};$('#nx').onclick=function(){if(k>=0&&k<ids.length-1)location.replace('#r/'+ids[k+1]+'/'+mid);else history.back()};$('#bk').onclick=function(){history.back()}})}
-function route(){var h=location.hash.slice(1),p=h.split('/');if(p[0]=='m')detail(p[1]);else if(p[0]=='r')read(p[1],p[2]);else if(p[0]=='l')library();else if(p[0]=='s')browse(decodeURIComponent(p.slice(1).join('/')));else browse('')}
+var RD=null;
+function chrome(x){try{VPApp.chrome(x)}catch(e){}}
+function ui(show){$('.top').style.display=show?'':'none';var b=$('#bar');if(b)b.style.display=(RD&&show)?'flex':'none';if(!RD)chrome(false)}
+function addCh(ch,first){if(!RD||RD.busy)return;RD.busy=true;api('/at-home/server/'+ch,function(j){if(!RD)return;RD.busy=false;if(!j||!j.chapter){if(first)msg('Could not load this chapter. Go back and try again.');else RD.end=true;return}
+var d=saver?j.chapter.dataSaver:j.chapter.data,fd=saver?'data-saver':'data',rd=RD.el;
+if(!first){var s=document.createElement('div');s.className='msg';s.textContent='Next chapter';s.dataset.ch=ch;rd.appendChild(s)}
+d.forEach(function(f){var i=document.createElement('img');i.loading='lazy';i.dataset.ch=ch;ld(i,j.baseUrl+'/'+fd+'/'+j.chapter.hash+'/'+f);rd.appendChild(i)});
+RD.last=ch;var dn=LS('done',{});dn[ch]=1;SV('done',dn);if(!first){try{history.replaceState(null,'','#r/'+ch+'/'+RD.mid)}catch(e){}}})}
+function read(ch,mid){msg('Loading pages...');var v=$('#v');v.innerHTML='<div class="rd"></div>';RD={el:v.firstChild,mid:mid,ids:LS('chs',[]),last:ch,busy:false,end:false,bars:false};
+window.scrollTo(0,0);var bar=$('#bar');bar.innerHTML='<button class="b" id="pv">Prev</button><button class="b" id="bk">List</button><button class="b" id="nx">Next</button>';
+function k(){return RD?RD.ids.indexOf(RD.last):-1}
+$('#pv').onclick=function(){var i=k();if(i>0)location.replace('#r/'+RD.ids[i-1]+'/'+mid);else history.back()};$('#nx').onclick=function(){var i=k();if(i>=0&&i<RD.ids.length-1)location.replace('#r/'+RD.ids[i+1]+'/'+mid);else history.back()};$('#bk').onclick=function(){location.hash='#m/'+mid};
+RD.el.onclick=function(){RD.bars=!RD.bars;ui(RD.bars);chrome(!RD.bars)};
+ui(false);chrome(true);addCh(ch,true)}
+window.addEventListener('scroll',function(){if(!RD||RD.busy||RD.end)return;if(window.innerHeight+window.scrollY>document.documentElement.scrollHeight-2500){var i=RD.ids.indexOf(RD.last);if(i>=0&&i<RD.ids.length-1)addCh(RD.ids[i+1],false);else if(!RD.end){RD.end=true;var s=document.createElement('div');s.className='msg';s.textContent='End of the available chapters.';RD.el.appendChild(s)}}},{passive:true});
+function route(){var h=location.hash.slice(1),p=h.split('/');if(p[0]!='r'){RD=null;ui(true)}if(p[0]=='m')detail(p[1]);else if(p[0]=='r')read(p[1],p[2]);else if(p[0]=='l')library();else if(p[0]=='s')browse(decodeURIComponent(p.slice(1).join('/')));else browse('')}
 $('#sf').onsubmit=function(e){e.preventDefault();var q=$('#q').value.trim();location.hash=q?'#s/'+encodeURIComponent(q):'';if(!q)route();return false};
 window.addEventListener('hashchange',route);chips();if(!LS('gateSeen',false)){SV('gateSeen',true);$('#gate').style.display='block'}route();
 </script></body></html>

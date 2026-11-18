@@ -142,6 +142,15 @@ public class MainActivity extends Activity {
         @Override public void onAccuracyChanged(Sensor s, int a) { }
     };
     private float lastScale = 0f;
+    private boolean immersive = false;
+
+    private void setImmersive(boolean b) {
+        immersive = b;
+        if (inPip) return;
+        bar.setVisibility(b ? View.GONE : View.VISIBLE);
+        navBar.setVisibility(b ? View.GONE : View.VISIBLE);
+        refreshBadge();
+    }
     private WebView subWv;
     private Tab subTab;
 
@@ -621,6 +630,7 @@ public class MainActivity extends Activity {
 
             @Override public void onPageStarted(WebView v, String u, Bitmap f) {
                 t.url = u;
+                if (t == cur && immersive) setImmersive(false);
                 t.media.clear();
                 t.entries.clear(); t.covered.clear(); t.gen++; t.pending = 0; t.panelOpen = false; t.autoShown = false;
                 if (t == cur) {
@@ -1017,6 +1027,9 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface public String pre(String host) { return topOrigins(host); }
         @JavascriptInterface public boolean prev() { return autoPrev; }
+        @JavascriptInterface public void chrome(final boolean hide) {
+            ui.post(new Runnable() { public void run() { if (t == cur) setImmersive(hide); } });
+        }
         @JavascriptInterface public void subInit(final String model) {
             ui.post(new Runnable() { public void run() { subTab = t; subCall("init", "'" + model.replaceAll("[^a-z]", "") + "'"); } });
         }
@@ -1211,7 +1224,7 @@ public class MainActivity extends Activity {
     private void rebuildPanel() {
         if (dlPanel == null) return;
         final Tab t = cur;
-        if (t == null || inPip || customView != null) { dlPanel.setVisibility(View.GONE); dlIcon.setVisibility(View.GONE); return; }
+        if (t == null || inPip || immersive || customView != null) { dlPanel.setVisibility(View.GONE); dlIcon.setVisibility(View.GONE); return; }
         int n = visibleOpts(t);
         dlIcon.setVisibility(n > 0 ? View.VISIBLE : View.GONE);
         dlBadge.setText(String.valueOf(n));
@@ -1485,8 +1498,8 @@ public class MainActivity extends Activity {
     @Override public void onPictureInPictureModeChanged(boolean in, Configuration c) {
         super.onPictureInPictureModeChanged(in, c);
         inPip = in;
-        bar.setVisibility(in ? View.GONE : View.VISIBLE);
-        navBar.setVisibility(in ? View.GONE : View.VISIBLE);
+        bar.setVisibility(in || immersive ? View.GONE : View.VISIBLE);
+        navBar.setVisibility(in || immersive ? View.GONE : View.VISIBLE);
         pb.setVisibility(View.GONE);
         refreshBadge();
         if (cur != null && customView == null) cur.wv.evaluateJavascript("window.__vpPip&&window.__vpPip(" + in + ")", null);
@@ -1506,6 +1519,7 @@ public class MainActivity extends Activity {
 
     @Override public void onBackPressed() {
         if (customView != null) { exitFullscreen(); return; }
+        if (immersive && cur != null) { cur.wv.evaluateJavascript("(function(){if(window.__vpReader&&window.__vpReader.on){window.__vpReader.toggle();return 1}return 0})()", new android.webkit.ValueCallback<String>() { public void onReceiveValue(String r) { setImmersive(false); if (!"1".equals(r) && cur != null && cur.wv.canGoBack()) cur.wv.goBack(); } }); return; }
         if (cur != null && cur.wv.canGoBack()) { cur.wv.goBack(); return; }
         if (tabs.size() > 1) { closeTab(cur); return; }
         moveTaskToBack(true);

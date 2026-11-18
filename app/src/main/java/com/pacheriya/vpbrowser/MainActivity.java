@@ -109,6 +109,8 @@ public class MainActivity extends Activity {
     private EditText urlBox;
     private TextView tabBtn, dlHead;
     private LinearLayout dlPanel, dlList;
+    private FrameLayout dlIcon;
+    private TextView dlBadge;
     private android.widget.ScrollView dlScroll;
     private final java.util.concurrent.ExecutorService resolver = java.util.concurrent.Executors.newFixedThreadPool(3);
     private ProgressBar pb;
@@ -325,6 +327,28 @@ public class MainActivity extends Activity {
 
         bar.addView(back, new LinearLayout.LayoutParams(dp(40), dp(40)));
         bar.addView(urlBox, new LinearLayout.LayoutParams(0, dp(42), 1f));
+        dlIcon = new FrameLayout(this);
+        TextView dlI = iconBtn("\u2B07");
+        dlI.setTextSize(20);
+        dlI.setTextColor(0xFFB9A8FF);
+        dlIcon.addView(dlI, new FrameLayout.LayoutParams(dp(40), dp(40)));
+        dlBadge = new TextView(this);
+        dlBadge.setTextColor(Color.WHITE);
+        dlBadge.setTextSize(10);
+        dlBadge.setGravity(Gravity.CENTER);
+        GradientDrawable bd = new GradientDrawable();
+        bd.setShape(GradientDrawable.OVAL);
+        bd.setColor(0xFFE53935);
+        dlBadge.setBackground(bd);
+        FrameLayout.LayoutParams bl = new FrameLayout.LayoutParams(dp(18), dp(18));
+        bl.gravity = Gravity.TOP | Gravity.END;
+        bl.setMargins(0, dp(2), dp(1), 0);
+        dlIcon.addView(dlBadge, bl);
+        dlIcon.setVisibility(View.GONE);
+        dlIcon.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) { if (cur != null) { cur.panelOpen = !cur.panelOpen; rebuildPanel(); } }
+        });
+        bar.addView(dlIcon, new LinearLayout.LayoutParams(dp(40), dp(40)));
         bar.addView(tabBtn, new LinearLayout.LayoutParams(dp(40), dp(40)));
         bar.addView(menu, new LinearLayout.LayoutParams(dp(36), dp(40)));
 
@@ -1015,9 +1039,11 @@ public class MainActivity extends Activity {
     private void rebuildPanel() {
         if (dlPanel == null) return;
         final Tab t = cur;
-        if (t == null || inPip || customView != null) { dlPanel.setVisibility(View.GONE); return; }
+        if (t == null || inPip || customView != null) { dlPanel.setVisibility(View.GONE); dlIcon.setVisibility(View.GONE); return; }
         int n = visibleOpts(t);
-        if (n == 0 && t.pending == 0) { dlPanel.setVisibility(View.GONE); return; }
+        dlIcon.setVisibility(n > 0 ? View.VISIBLE : View.GONE);
+        dlBadge.setText(String.valueOf(n));
+        if (n == 0 || !t.panelOpen) { dlPanel.setVisibility(View.GONE); return; }
         dlPanel.setVisibility(View.VISIBLE);
         dlHead.setText(n == 0 ? "\u2B07  Finding video qualities..." : "\u2B07  " + n + " download option" + (n > 1 ? "s" : "") + "   " + (t.panelOpen ? "\u25B2" : "\u25BC"));
         dlList.removeAllViews();

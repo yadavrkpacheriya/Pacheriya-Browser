@@ -118,7 +118,7 @@
       var vs = document.getElementsByTagName('video'), pl = false;
       for (var i = 0; i < vs.length; i++) {
         var v = vs[i];
-        if (!v.paused && !v.ended && v.readyState > 2) pl = true;
+        if (!v.paused && !v.ended && v.readyState > 2 && !v.loop && !(v.muted && !(v.duration > 90))) pl = true;
         var s = v.currentSrc;
         if (s && s.indexOf('http') === 0 && !/googlevideo\.com/.test(s)) VPApp.media(s);
       }
@@ -127,19 +127,45 @@
       VPApp.playing(pl);
     } catch (e) {}
   }, 1500);
+  ['play','playing'].forEach(function (ev) { document.addEventListener(ev, function (e) { try { var v = e.target; if (window.VPApp && v && v.tagName === 'VIDEO' && !v.loop && !(v.muted && !(v.duration > 90))) VPApp.playing(true); } catch (x) {} }, true); });
   /* 3. picture-in-picture: make the playing video fill the small window */
-  window.__vpPip = function (on) {
+  var PIPC = '__vpPipV', PIPA = '__vpPipA', PIPH = '__vpPipH';
+  function pipClear() {
     var old = document.getElementById('__vpPipStyle'); if (old) old.remove();
-    var marked = document.querySelectorAll('.__vpPipV'); for (var k = 0; k < marked.length; k++) marked[k].classList.remove('__vpPipV');
-    if (!on) return;
-    var best = null, ba = 0, vs = document.getElementsByTagName('video');
-    for (var i = 0; i < vs.length; i++) { var r = vs[i].getBoundingClientRect(), a = r.width * r.height; if (!vs[i].paused && a >= ba) { best = vs[i]; ba = a; } }
-    if (!best) return;
-    best.classList.add('__vpPipV');
+    [PIPC, PIPA, PIPH].forEach(function (c) { var m = document.querySelectorAll('.' + c); for (var k = 0; k < m.length; k++) m[k].classList.remove(c); });
+  }
+  function pipFor(el) {
+    pipClear();
+    el.classList.add(PIPC);
+    for (var p = el; p && p !== document.documentElement; p = p.parentElement) {
+      if (p !== el) p.classList.add(PIPA);
+      var par = p.parentElement; if (!par) break;
+      for (var q = par.firstElementChild; q; q = q.nextElementSibling) if (q !== p && !/^(SCRIPT|STYLE|LINK|META)$/.test(q.tagName)) q.classList.add(PIPH);
+    }
     var st = document.createElement('style'); st.id = '__vpPipStyle';
-    st.textContent = 'html,body{overflow:hidden!important}.__vpPipV{position:fixed!important;top:0!important;left:0!important;width:100vw!important;height:100vh!important;z-index:2147483647!important;background:#000!important;object-fit:contain!important;max-width:none!important;max-height:none!important;transform:none!important}';
+    st.textContent = 'html,body{overflow:hidden!important;background:#000!important}.' + PIPH + '{display:none!important}.' + PIPA + '{transform:none!important;filter:none!important;contain:none!important;perspective:none!important;will-change:auto!important;overflow:visible!important;clip-path:none!important;margin:0!important;padding:0!important;border:0!important;opacity:1!important;visibility:visible!important}.' + PIPC + '{position:fixed!important;top:0!important;left:0!important;right:0!important;bottom:0!important;width:100vw!important;height:100vh!important;margin:0!important;z-index:2147483647!important;background:#000!important;object-fit:contain!important;max-width:none!important;max-height:none!important;transform:none!important;border:0!important;display:block!important;visibility:visible!important}';
     document.documentElement.appendChild(st);
+  }
+  function pipSelf() {
+    var best = null, ba = 0, vs = document.getElementsByTagName('video');
+    for (var i = 0; i < vs.length; i++) { var v = vs[i], r = v.getBoundingClientRect(), a = r.width * r.height; if (!v.paused && !v.loop && !(v.muted && !(v.duration > 90)) && a >= ba) { best = v; ba = a; } }
+    if (!best) return false;
+    pipFor(best);
+    try { if (window.parent !== window) window.parent.postMessage({ __vpPipUp: 1 }, '*'); } catch (e) {}
+    return true;
+  }
+  window.__vpPip = function (on) {
+    if (!on) pipClear(); else pipSelf();
+    try { var fr = document.getElementsByTagName('iframe'); for (var i = 0; i < fr.length; i++) { try { fr[i].contentWindow.postMessage({ __vpPipSet: on ? 1 : 0 }, '*'); } catch (e) {} } } catch (e) {}
   };
+  window.addEventListener('message', function (e) {
+    var d = e.data; if (!d || typeof d !== 'object') return;
+    if (d.__vpPipSet !== undefined) { window.__vpPip(!!d.__vpPipSet); }
+    else if (d.__vpPipUp) {
+      var fr = document.getElementsByTagName('iframe');
+      for (var i = 0; i < fr.length; i++) if (fr[i].contentWindow === e.source) { pipFor(fr[i]); try { if (window.parent !== window) window.parent.postMessage({ __vpPipUp: 1 }, '*'); } catch (x) {} break; }
+    }
+  });
   /* 5. remove common page restrictions: forced no-zoom, blocked copy / select */
   try {
     ['copy', 'contextmenu', 'selectstart'].forEach(function (e) { document.addEventListener(e, function (ev) { ev.stopImmediatePropagation(); }, true); });

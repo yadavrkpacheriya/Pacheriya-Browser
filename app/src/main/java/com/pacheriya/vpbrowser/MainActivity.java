@@ -141,6 +141,7 @@ public class MainActivity extends Activity {
         }
         @Override public void onAccuracyChanged(Sensor s, int a) { }
     };
+    private float lastScale = 0f;
     private boolean playing = false, inPip = false, desktop = false, adblock = true, scripts = true;
     private boolean autoPrev = true;
     private String readerJs = "";
@@ -249,6 +250,7 @@ public class MainActivity extends Activity {
             public void run() {
                 boolean p = SystemClock.uptimeMillis() - lastPlayTs < 4500;
                 if (p != playing) setPlaying(p);
+                if (!inPip && cur != null) { try { float sc = cur.wv.getScale(); if (sc > 0.2f && sc < 8f) lastScale = sc; } catch (Throwable e) { /* ignore */ } }
                 ui.postDelayed(this, 2000);
             }
         });
@@ -1405,6 +1407,16 @@ public class MainActivity extends Activity {
         if (playing && !isInPictureInPictureMode()) enterPip();
     }
 
+    private void fixZoom(final Tab ct, final float want, final int n) {
+        try {
+            float now = ct.wv.getScale();
+            if (now > 0f && Math.abs(now - want) / want > 0.03f) {
+                ct.wv.zoomBy(Math.max(0.01f, Math.min(100f, want / now)));
+                if (n < 3) ui.postDelayed(new Runnable() { public void run() { fixZoom(ct, want, n + 1); } }, 400);
+            }
+        } catch (Throwable e) { /* ignore */ }
+    }
+
     @Override public void onPictureInPictureModeChanged(boolean in, Configuration c) {
         super.onPictureInPictureModeChanged(in, c);
         inPip = in;
@@ -1413,6 +1425,11 @@ public class MainActivity extends Activity {
         pb.setVisibility(View.GONE);
         refreshBadge();
         if (cur != null && customView == null) cur.wv.evaluateJavascript("window.__vpPip&&window.__vpPip(" + in + ")", null);
+        if (!in && cur != null && lastScale > 0f) {
+            final Tab ct = cur;
+            final float want = lastScale;
+            ui.postDelayed(new Runnable() { public void run() { fixZoom(ct, want, 0); } }, 450);
+        }
     }
 
     // ---------------- lifecycle ----------------

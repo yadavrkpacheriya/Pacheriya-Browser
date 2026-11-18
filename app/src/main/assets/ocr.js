@@ -31,7 +31,8 @@
     if (!/^https?:/.test(u) || /\.(gif|svg)(\?|#|$)/i.test(u)) { if (/^https?:/.test(u) || img.complete) img.__vpPicDone = 1; return; }
     if (!img.complete || !img.naturalWidth) { img.addEventListener('load', function () { go(img); }, { once: true }); return; }
     img.__vpPicDone = 1;
-    if (img.naturalWidth < 300 || img.naturalHeight < 300 || img.offsetWidth < 180) return;
+    if (img.naturalWidth < 300 || img.naturalHeight < 300 || img.offsetWidth < Math.max(180, innerWidth * 0.5)) return;
+    if (P.n > 150) return;
     var id = ++P.n;
     P.cbs[id] = function (json) { if (!json) return; try { draw(img, JSON.parse(json)); } catch (x) {} };
     try { VPApp.ocr(id, u); } catch (x) {}

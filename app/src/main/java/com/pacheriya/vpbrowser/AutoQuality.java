@@ -27,10 +27,27 @@ final class AutoQuality {
     private static volatile long at = 0;
     private static final Set<String> plain = new HashSet<>();
 
+    private static volatile boolean measuring = false;
+
+    /** Never blocks the video: answers at once from the last test (or the phone's own estimate) and re-tests in the background. */
     static double speed(Context c) {
         long now = System.currentTimeMillis();
-        if (mbps > 0 && now - at < 90000) return mbps;
+        if ((mbps <= 0 || now - at > 90000) && !measuring) {
+            measuring = true;
+            new Thread(new Runnable() { public void run() { try { double m = measure(); if (m > 0) { mbps = m; at = System.currentTimeMillis(); } } finally { measuring = false; } } }).start();
+        }
+        if (mbps > 0 && now - at < 600000) return mbps;
         double m = -1;
+        try {
+            ConnectivityManager cm = (ConnectivityManager) c.getSystemService(Context.CONNECTIVITY_SERVICE);
+            Network nw = cm.getActiveNetwork();
+            NetworkCapabilities nc = nw == null ? null : cm.getNetworkCapabilities(nw);
+            if (nc != null) m = Math.max(1.0, nc.getLinkDownstreamBandwidthKbps() / 1000.0 * 0.4);
+        } catch (Throwable e) { m = 5; }
+        return m > 0 ? m : 5;
+    }
+
+    private static double measure() {
         try {
             HttpURLConnection h = (HttpURLConnection) new URL("https://speed.cloudflare.com/__down?bytes=700000").openConnection();
             h.setConnectTimeout(2500);
@@ -42,20 +59,33 @@ final class AutoQuality {
             int r;
             while ((r = in.read(b)) > 0) { n += r; if (System.nanoTime() - t0 > 3000000000L) break; }
             double s = (System.nanoTime() - t0) / 1e9;
-            if (n > 100000 && s > 0.05) m = n * 8.0 / s / 1e6;
-        } catch (Throwable e) { m = -1; }
-        if (m <= 0) {
-            try {
-                ConnectivityManager cm = (ConnectivityManager) c.getSystemService(Context.CONNECTIVITY_SERVICE);
-                Network nw = cm.getActiveNetwork();
-                NetworkCapabilities nc = nw == null ? null : cm.getNetworkCapabilities(nw);
-                if (nc != null) m = Math.max(1.0, nc.getLinkDownstreamBandwidthKbps() / 1000.0 * 0.4);
-            } catch (Throwable e) { m = 5; }
-        }
-        if (m <= 0) m = 5;
-        mbps = m;
-        at = now;
-        return m;
+            if (n > 100000 && s > 0.05) return n * 8.0 / s / 1e6;
+        } catch (Throwable e) { /* fall through */ }
+        return -1;
+    }
+
+    private static String absolutize(String body, String base) {
+        try {
+            URL bu = new URL(base);
+            String[] ln = body.split("\r?\n", -1);
+            StringBuilder sb = new StringBuilder();
+            java.util.regex.Pattern p = java.util.regex.Pattern.compile("URI=\"([^\"]+)\"");
+            for (int i = 0; i < ln.length; i++) {
+                String l = ln[i];
+                if (l.startsWith("#")) {
+                    java.util.regex.Matcher m = p.matcher(l);
+                    StringBuffer o = new StringBuffer();
+                    while (m.find()) m.appendReplacement(o, java.util.regex.Matcher.quoteReplacement("URI=\"" + new URL(bu, m.group(1)) + "\""));
+                    m.appendTail(o);
+                    l = o.toString();
+                } else if (!l.trim().isEmpty()) {
+                    l = new URL(bu, l.trim()).toString();
+                }
+                sb.append(l);
+                if (i < ln.length - 1) sb.append('\n');
+            }
+            return sb.toString();
+        } catch (Throwable e) { return body; }
     }
 
     static int capHeight(double m, boolean saver) {
@@ -156,8 +186,13 @@ final class AutoQuality {
             int n;
             while ((n = in.read(b)) > 0) { bo.write(b, 0, n); if (bo.size() > 3000000) return null; }
             String body = bo.toString("UTF-8");
+            String fin = h.getURL().toString();
+            boolean moved = !fin.equals(u);
+            boolean master = body.startsWith("#EXTM3U") && body.contains("#EXT-X-STREAM-INF");
+            if (moved && !master) { synchronized (plain) { plain.add(u); } return null; }
+            if (moved) body = absolutize(body, fin);
             String out = body;
-            if (body.startsWith("#EXTM3U") && body.contains("#EXT-X-STREAM-INF")) {
+            if (master) {
                 double m = speed(c);
                 int cap = capHeight(m, saver);
                 out = trim(body, cap);

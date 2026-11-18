@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Plus
 // @namespace    pacheriya
-// @version      3.4
+// @version      3.5
 // @description  Built-in ad and popup blocker, theater look, picture enhancer, swipe gestures, speed, PiP and subtitles for videos on any website
 // @match        *://*/*
 // @run-at       document-start
@@ -714,8 +714,10 @@
   document.addEventListener('touchstart', function (e) {
     if (!S.gest || e.touches.length !== 1 || root.contains(e.target)) { g = null; return; }
     var t = e.touches[0], h = hit(t); if (!h) { g = null; return; }
+    /* tall videos in a swipe feed (shorts, reels): the swipe belongs to the site, so gestures stay out of the way */
+    if (!document.fullscreenElement && !rot && h.r.height > h.r.width * 1.2 && h.r.height > innerHeight * 0.6) { g = null; return; }
     g = { v: h.v, r: h.r, x: t.clientX, y: t.clientY, mode: null, t0: h.v.currentTime, vol: h.v.volume, br: S.br, left: (rot ? (t.clientY - h.r.top) < h.r.height / 2 : (t.clientX - h.r.left) < h.r.width / 2), rot: rot, dt: 0, sys: -1,
-      lock: !!(document.fullscreenElement || rot || (!(h.v.loop || h.v.__vpNoCore || (h.v.muted && h.v.autoplay)) && h.r.height >= innerHeight * 0.4)) };
+      lock: !!(document.fullscreenElement || rot || (h.r.width > h.r.height * 1.2 && h.r.height >= innerHeight * 0.4)) };
     try { if (window.VPApp && VPApp.getVol) g.sys = VPApp.getVol(); } catch (e) {}
   }, { passive: true, capture: true });
   document.addEventListener('touchmove', function (e) {

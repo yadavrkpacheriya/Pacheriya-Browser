@@ -195,7 +195,12 @@ public class MainActivity extends Activity {
                 ss.setAllowFileAccess(true);
                 ss.setMediaPlaybackRequiresUserGesture(false);
                 subWv.addJavascriptInterface(new SubBridge(), "SubApp");
-                subWv.loadUrl("file:///android_asset/sub.html");
+                final androidx.webkit.WebViewAssetLoader al = new androidx.webkit.WebViewAssetLoader.Builder().addPathHandler("/assets/", new androidx.webkit.WebViewAssetLoader.AssetsPathHandler(this)).build();
+                subWv.setWebViewClient(new WebViewClient() {
+                    @Override public WebResourceResponse shouldInterceptRequest(WebView v, WebResourceRequest r) { return al.shouldInterceptRequest(r.getUrl()); }
+                });
+                /* a real https origin lets the engine keep the AI model in the browser cache instead of downloading it every time */
+                subWv.loadUrl("https://appassets.androidplatform.net/assets/sub.html");
                 addContentView(subWv, new android.widget.FrameLayout.LayoutParams(1, 1));
             }
             subWv.evaluateJavascript("(function f(){if(window.__ok)window.__" + fn + "(" + args + ");else setTimeout(f,400)})()", null);
@@ -288,7 +293,7 @@ public class MainActivity extends Activity {
         String vpa = asset("video-plus.user.js");
         /* the downloaded copy is used only when it is at least as new as the one inside the app (18 Nov: an older web
            copy was hiding the app's newer Auto picture) */
-        if (vp == null || vp.length() < 10000 || scriptVer(vp) < scriptVer(vpa)) vp = vpa;
+        if (vp == null || vp.length() < 10000 || scriptVer(vp) <= scriptVer(vpa)) vp = vpa;
         String css = "(function(){var c=" + jq(asset("vp-cosmetic.css")) + ";function a(){var p=document.head||document.documentElement;if(!p){setTimeout(a,15);return}var s=document.createElement('style');s.textContent=c;p.appendChild(s)}a()})();";
         readerJs = asset("reader.js");
         ocrJs = asset("ocr.js");
@@ -567,6 +572,7 @@ public class MainActivity extends Activity {
     private void select(Tab t) {
         if (cur != null && cur.wv.getParent() == content) content.removeView(cur.wv);
         cur = t;
+        if (immersive) setReadMode(false); else if (bar != null && navBar != null) showChrome();
         if (t.wv.getParent() != null) ((ViewGroup) t.wv.getParent()).removeView(t.wv);
         content.addView(t.wv, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         urlBox.setText(t.url.startsWith("file:") ? "" : t.url);
@@ -1057,6 +1063,8 @@ public class MainActivity extends Activity {
         setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
         hideBars(false);
         refreshBadge();
+        final Tab zt = cur;
+        ui.postDelayed(new Runnable() { public void run() { if (zt == cur) fitZoom(zt, 0); } }, 800);
     }
 
     private void hideBars(boolean hide) {
@@ -1623,6 +1631,7 @@ public class MainActivity extends Activity {
         } catch (Exception e) { /* no light sensor: the Auto picture uses the video alone */ }
         setBg(false);
         Updater.resume(this);
+        Updater.check(this, false);
     }
 
     private void setBg(boolean on) {

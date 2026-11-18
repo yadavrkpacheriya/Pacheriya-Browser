@@ -36,7 +36,7 @@ final class Updater {
     static void check(final Activity a, final boolean manual) {
         final SharedPreferences sp = a.getSharedPreferences("vpb", Context.MODE_PRIVATE);
         long now = System.currentTimeMillis();
-        if (!manual && now - sp.getLong("lastCheck", 0) < 6L * 3600 * 1000) return;
+        if (!manual && now - sp.getLong("lastCheck", 0) < 45L * 60 * 1000) return;
         if (busy) return;
         sp.edit().putLong("lastCheck", now).apply();
         new Thread(new Runnable() {

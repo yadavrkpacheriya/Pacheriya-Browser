@@ -14,6 +14,11 @@ import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
+import android.view.WindowManager;
 import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
@@ -112,6 +117,28 @@ public class MainActivity extends Activity {
     private SharedPreferences sp;
     private final Handler ui = new Handler(Looper.getMainLooper());
     private volatile long lastPlayTs = 0;
+    /* 18 Nov: the room's light (lux) for the Auto picture, and a full-brightness screen while a video plays in sunlight */
+    private SensorManager sensors;
+    private float lux = -1f;
+    private long luxSentTs = 0;
+    private boolean sunBoost = false;
+    private final SensorEventListener luxListener = new SensorEventListener() {
+        @Override public void onSensorChanged(SensorEvent e) {
+            lux = e.values[0];
+            long now = SystemClock.uptimeMillis();
+            if (now - luxSentTs < 2000) return;
+            luxSentTs = now;
+            if (cur != null) { try { cur.wv.evaluateJavascript("window.__vpLux=" + Math.round(lux), null); } catch (Exception ex) { /* ignore */ } }
+            boolean want = lux >= 3000 && now - lastPlayTs < 6000;
+            if (want != sunBoost) {
+                sunBoost = want;
+                WindowManager.LayoutParams lp = getWindow().getAttributes();
+                lp.screenBrightness = want ? 1f : WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE;
+                getWindow().setAttributes(lp);
+            }
+        }
+        @Override public void onAccuracyChanged(Sensor s, int a) { }
+    };
     private boolean playing = false, inPip = false, desktop = false, adblock = true, scripts = true;
     private String injected = "", defaultUa = "", desktopUa = "";
     private static final java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.ConcurrentHashMap<String, Integer>> ORIGINS = new java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.ConcurrentHashMap<String, Integer>>();
@@ -182,7 +209,10 @@ public class MainActivity extends Activity {
         engine = sp.getString("engine", "google");
 
         String vp = sp.getString("vpjs", null);
-        if (vp == null || vp.length() < 10000) vp = asset("video-plus.user.js");
+        String vpa = asset("video-plus.user.js");
+        /* the downloaded copy is used only when it is at least as new as the one inside the app (18 Nov: an older web
+           copy was hiding the app's newer Auto picture) */
+        if (vp == null || vp.length() < 10000 || scriptVer(vp) < scriptVer(vpa)) vp = vpa;
         String css = "(function(){var c=" + jq(asset("vp-cosmetic.css")) + ";function a(){var p=document.head||document.documentElement;if(!p){setTimeout(a,15);return}var s=document.createElement('style');s.textContent=c;p.appendChild(s)}a()})();";
         injected = asset("vp-core.js") + "\n" + css + "\n" + vp;
 
@@ -1234,6 +1264,7 @@ public class MainActivity extends Activity {
 
     @Override protected void onPause() {
         super.onPause();
+        try { if (sensors != null) sensors.unregisterListener(luxListener); } catch (Exception e) { /* ignore */ }
         CookieManager.getInstance().flush();
         JSONArray saved = new JSONArray();
         for (Tab t : tabs) if (!t.incognito && t.url.startsWith("http") && saved.length() < 8) saved.put(t.url);
@@ -1244,11 +1275,25 @@ public class MainActivity extends Activity {
 
     @Override protected void onResume() {
         super.onResume();
+        try {
+            if (sensors == null) sensors = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
+            Sensor ls = sensors == null ? null : sensors.getDefaultSensor(Sensor.TYPE_LIGHT);
+            if (ls != null) sensors.registerListener(luxListener, ls, SensorManager.SENSOR_DELAY_NORMAL);
+        } catch (Exception e) { /* no light sensor: the Auto picture uses the video alone */ }
         setBg(false);
     }
 
     private void setBg(boolean on) {
         for (Tab t : tabs) { try { t.wv.evaluateJavascript("window.__vpBg=" + on, null); } catch (Exception e) { /* ignore */ } }
+    }
+
+    /** "@version 3.4" -> 3004 (major * 1000 + minor), 0 when missing. */
+    static int scriptVer(String js) {
+        try {
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile("@version\\s+(\\d+)\\.(\\d+)").matcher(js);
+            if (m.find()) return Integer.parseInt(m.group(1)) * 1000 + Integer.parseInt(m.group(2));
+        } catch (Exception e) { /* ignore */ }
+        return 0;
     }
 
     @Override protected void onDestroy() {

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Plus
 // @namespace    pacheriya
-// @version      3.3
+// @version      3.4
 // @description  Built-in ad and popup blocker, theater look, picture enhancer, swipe gestures, speed, PiP and subtitles for videos on any website
 // @match        *://*/*
 // @run-at       document-start
@@ -14,7 +14,7 @@
   if (window.__vplus) return;
   window.__vplus = 1;
 
-  var S = { sharp: 0, ct: 1, sat: 1, warm: 0, br: 1, gest: true, theater: false, autofs: true, autorot: true, adblock: true, boost: true, rate: 1, gain: 1, hdx: false, shp: 0.7, model: 'base' };
+  var S = { auto: true, sharp: 0, ct: 1, sat: 1, warm: 0, br: 1, gest: true, theater: false, autofs: true, autorot: true, adblock: true, boost: true, rate: 1, gain: 1, hdx: false, shp: 0.7, model: 'base' };
   var hdMap = new WeakMap();
   try { Object.assign(S, JSON.parse(localStorage.getItem('vplus2') || '{}')); } catch (e) {}
   var save = function () { try { localStorage.setItem('vplus2', JSON.stringify(S)); } catch (e) {} };
@@ -50,11 +50,12 @@
   }
 
   var PRE = {
-    Original: { sharp: 0, ct: 1, sat: 1, warm: 0, br: 1 },
-    Cinema: { sharp: 0, ct: 1.06, sat: 1.08, warm: 0, br: 1.02 },
-    Vivid: { sharp: 0, ct: 1.05, sat: 1.22, warm: 0, br: 1.04 },
-    Punchy: { sharp: 0, ct: 1.09, sat: 1.12, warm: 0, br: 1.03 },
-    Night: { sharp: 0, ct: 1, sat: 0.95, warm: 0.2, br: 1.18 }
+    Auto: { auto: true },
+    Original: { auto: false, sharp: 0, ct: 1, sat: 1, warm: 0, br: 1 },
+    Cinema: { auto: false, sharp: 0, ct: 1.06, sat: 1.08, warm: 0, br: 1.02 },
+    Vivid: { auto: false, sharp: 0, ct: 1.05, sat: 1.22, warm: 0, br: 1.04 },
+    Punchy: { auto: false, sharp: 0, ct: 1.09, sat: 1.12, warm: 0, br: 1.03 },
+    Night: { auto: false, sharp: 0, ct: 1, sat: 0.95, warm: 0.2, br: 1.18 }
   };
 
   /* ---------- UI ---------- */
@@ -104,10 +105,45 @@
     return best;
   }
 
+  /* ---------- AUTO look (18 Nov): a natural, bright "4K cinema" picture that adapts by itself ----------
+     Reads how dark the playing picture really is (a tiny 32x18 sample once a second, where the site allows it) and how
+     bright the room is (the phone's light sensor, sent by the app as window.__vpLux). Dark scenes are lifted, bright
+     ones are left alone so whites do not burn out; in sunlight it adds brightness and contrast, in a dark room it stays
+     gentle. Changes glide slowly so the picture never flickers. */
+  var AUTO = { ct: 1.08, sat: 1.14, br: 1.12 }, cvs = null, cx = null, luma = null;
+  function sampleLuma(v) {
+    try {
+      if (!v || v.readyState < 2 || !v.videoWidth) return null;
+      cvs = cvs || document.createElement('canvas'); cvs.width = 32; cvs.height = 18;
+      cx = cx || cvs.getContext('2d', { willReadFrequently: true });
+      cx.drawImage(v, 0, 0, 32, 18);
+      var d = cx.getImageData(0, 0, 32, 18).data, t = 0;
+      for (var i = 0; i < d.length; i += 4) t += 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+      return t / (d.length / 4) / 255;
+    } catch (e) { return null; }                       /* the site does not allow reading the picture: use the light sensor only */
+  }
+  function autoTick() {
+    if (!S.auto) return;
+    var v = target(); if (!v || v.paused) return;
+    var L = sampleLuma(v); if (L !== null) luma = luma === null ? L : luma * 0.6 + L * 0.4;
+    var lux = typeof window.__vpLux === 'number' ? window.__vpLux : null;
+    var br = luma === null ? 1.14 : Math.min(1.32, Math.max(1.0, Math.pow(0.42 / Math.max(luma, 0.06), 0.45)));
+    if (luma !== null && luma > 0.5) br = 1.0;          /* already bright: never burn the whites */
+    var ct = 1.08, sat = 1.14;
+    if (lux !== null && lux >= 3000) { br *= 1.08; ct += 0.07; sat += 0.05; }          /* sunlight */
+    else if (lux !== null && lux >= 400) { br *= 1.03; ct += 0.03; }                  /* bright room */
+    else if (lux !== null && lux < 15) { br = Math.min(br, 1.15); ct = 1.04; sat = 1.08; }   /* dark room: easy on the eyes */
+    br = Math.min(1.4, br);
+    AUTO.br += (br - AUTO.br) * 0.25; AUTO.ct += (ct - AUTO.ct) * 0.25; AUTO.sat += (sat - AUTO.sat) * 0.25;
+    applyLook(true);
+  }
+  setInterval(autoTick, 1000);
+
   /* ---------- look ---------- */
   function applyLook(quiet) {
-    var neutral = S.ct === 1 && S.sat === 1 && S.warm === 0 && S.br === 1;
-    var f = 'contrast(' + S.ct + ') saturate(' + S.sat + ') brightness(' + S.br + ')' + (S.warm > 0 ? ' sepia(' + (S.warm * 0.25) + ')' : '');
+    var L = S.auto ? { ct: +AUTO.ct.toFixed(3), sat: +AUTO.sat.toFixed(3), br: +AUTO.br.toFixed(3), warm: 0 } : S;
+    var neutral = L.ct === 1 && L.sat === 1 && L.warm === 0 && L.br === 1;
+    var f = 'contrast(' + L.ct + ') saturate(' + L.sat + ') brightness(' + L.br + ')' + (L.warm > 0 ? ' sepia(' + (L.warm * 0.25) + ')' : '');
     vids.forEach(function (v) {
       if (hdMap.has(v)) { if (v.style.getPropertyValue('filter')) v.style.removeProperty('filter'); }
       else if (neutral) { if (v.style.getPropertyValue('filter')) v.style.removeProperty('filter'); } else if (v.style.getPropertyValue('filter') !== f) v.style.setProperty('filter', f, 'important');
@@ -371,7 +407,7 @@
   /* ---------- panel ---------- */
   function build() {
     var h = '<b>Video Plus</b><div id="vp-st" style="font-size:12px;opacity:.85;margin:4px 0 8px"></div><div>';
-    Object.keys(PRE).forEach(function (k) { h += '<button data-p="' + k + '">' + k + '</button>'; });
+    Object.keys(PRE).forEach(function (k) { h += '<button data-p="' + k + '" class="' + ((k === 'Auto') === !!S.auto ? (k === 'Auto' ? 'on' : '') : '') + '">' + (k === 'Auto' ? 'Auto (4K cinema)' : k) + '</button>'; });
     h += '</div>';
     [['ct', 'Contrast', 0.8, 1.4, 0.02], ['sat', 'Color', 0.6, 1.6, 0.02], ['warm', 'Warmth', -1, 1, 0.1], ['br', 'Brightness', 0.6, 1.6, 0.02]].forEach(function (a) {
       h += '<label><span>' + a[1] + '</span><input type="range" data-k="' + a[0] + '" min="' + a[2] + '" max="' + a[3] + '" step="' + a[4] + '" value="' + S[a[0]] + '"></label>';
@@ -414,7 +450,7 @@
         if (ok && setGain(v, g)) { v.muted = false; try { v.volume = 1; } catch (e) {} say('\uD83D\uDD0A boost ' + Math.round(g * 100) + '%'); } else say('Boost not possible: this site keeps its audio locked. Use phone volume or headphones.', 3500);
       });
     }; });
-    panel.querySelectorAll('[data-k]').forEach(function (i) { i.oninput = function () { S[i.dataset.k] = parseFloat(i.value); applyLook(); }; });
+    panel.querySelectorAll('[data-k]').forEach(function (i) { i.oninput = function () { if (S.auto) { S.ct = AUTO.ct; S.sat = AUTO.sat; S.br = AUTO.br; S.warm = 0; S.auto = false; } S[i.dataset.k] = parseFloat(i.value); applyLook(); }; });
     $('#vp-th').onclick = function () { S.theater = !S.theater; applyLook(); this.classList.toggle('on', S.theater); };
     $('#vp-ge').onclick = function () { S.gest = !S.gest; save(); this.classList.toggle('on', S.gest); say('Gestures ' + (S.gest ? 'on' : 'off')); };
     $('#vp-bo').onclick = function () { S.boost = !(S.boost !== false); save(); this.classList.toggle('on', S.boost); say('Booster ' + (S.boost ? 'on' : 'off')); };

@@ -49,6 +49,7 @@ import android.widget.PopupMenu;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
+import androidx.webkit.ScriptHandler;
 import androidx.webkit.WebViewCompat;
 import androidx.webkit.WebViewFeature;
 
@@ -72,6 +73,7 @@ public class MainActivity extends Activity {
         String title = "New tab";
         String url = "";
         final ArrayList<String> media = new ArrayList<String>();
+        ScriptHandler sh;
     }
 
     private final ArrayList<Tab> tabs = new ArrayList<Tab>();
@@ -86,7 +88,7 @@ public class MainActivity extends Activity {
     private SharedPreferences sp;
     private final Handler ui = new Handler(Looper.getMainLooper());
     private volatile long lastPlayTs = 0;
-    private boolean playing = false, inPip = false, desktop = false, adblock = true;
+    private boolean playing = false, inPip = false, desktop = false, adblock = true, scripts = true;
     private String injected = "", defaultUa = "", desktopUa = "";
 
     private int dp(int v) { return Math.round(v * getResources().getDisplayMetrics().density); }
@@ -113,6 +115,7 @@ public class MainActivity extends Activity {
         super.onCreate(b);
         sp = getSharedPreferences("vpb", MODE_PRIVATE);
         adblock = sp.getBoolean("adblock", true);
+        scripts = sp.getBoolean("scripts", true);
 
         String vp = sp.getString("vpjs", null);
         if (vp == null || vp.length() < 10000) vp = asset("video-plus.user.js");
@@ -333,8 +336,8 @@ public class MainActivity extends Activity {
         CookieManager.getInstance().setAcceptThirdPartyCookies(w, true);
         w.addJavascriptInterface(new Bridge(t), "VPApp");
 
-        if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
-            WebViewCompat.addDocumentStartJavaScript(w, injected, Collections.singleton("*"));
+        if (scripts && WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+            t.sh = WebViewCompat.addDocumentStartJavaScript(w, injected, Collections.singleton("*"));
         }
 
         w.setWebViewClient(new WebViewClient() {
@@ -365,6 +368,15 @@ public class MainActivity extends Activity {
                     urlBox.setText(u.startsWith("file:") ? "" : u);
                     refreshBadge();
                 }
+            }
+
+            @Override public void onReceivedError(WebView v, WebResourceRequest r, android.webkit.WebResourceError e) {
+                if (r.isForMainFrame()) toast("Cannot open page: " + e.getDescription());
+            }
+
+            @Override public void onReceivedSslError(WebView v, android.webkit.SslErrorHandler h, android.net.http.SslError e) {
+                h.cancel();
+                toast("Security certificate problem on this site");
             }
 
             @Override public void onPageFinished(WebView v, String u) {
@@ -580,7 +592,8 @@ public class MainActivity extends Activity {
         m.getMenu().add(0, 7, 6, "Downloaded files");
         m.getMenu().add(0, 8, 7, "Copy link");
         m.getMenu().add(0, 9, 8, "Share link");
-        m.getMenu().add(0, 10, 9, "Exit");
+        m.getMenu().add(0, 11, 9, "Video Plus scripts").setCheckable(true).setChecked(scripts);
+        m.getMenu().add(0, 10, 10, "Exit");
         m.setOnMenuItemClickListener(new PopupMenu.OnMenuItemClickListener() {
             public boolean onMenuItemClick(android.view.MenuItem it) {
                 switch (it.getItemId()) {
@@ -619,6 +632,18 @@ public class MainActivity extends Activity {
                         startActivity(Intent.createChooser(i, "Share link"));
                         break;
                     }
+                    case 11:
+                        scripts = !scripts;
+                        sp.edit().putBoolean("scripts", scripts).apply();
+                        for (Tab tt : tabs) {
+                            if (!scripts && tt.sh != null) { tt.sh.remove(); tt.sh = null; }
+                            else if (scripts && tt.sh == null && WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+                                tt.sh = WebViewCompat.addDocumentStartJavaScript(tt.wv, injected, Collections.singleton("*"));
+                            }
+                        }
+                        toast(scripts ? "Video Plus scripts on" : "Video Plus scripts off");
+                        cur.wv.reload();
+                        break;
                     case 10: finishAndRemoveTask(); break;
                 }
                 return true;
@@ -666,6 +691,16 @@ public class MainActivity extends Activity {
         super.onPause();
         CookieManager.getInstance().flush();
         /* the page is deliberately NOT paused, so audio keeps playing in the background */
+        setBg(true);
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        setBg(false);
+    }
+
+    private void setBg(boolean on) {
+        for (Tab t : tabs) { try { t.wv.evaluateJavascript("window.__vpBg=" + on, null); } catch (Exception e) { /* ignore */ } }
     }
 
     @Override protected void onDestroy() {

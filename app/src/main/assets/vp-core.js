@@ -1,14 +1,15 @@
 (function () {
   if (window.__vpCore) return; window.__vpCore = 1;
-  /* 1. background play: pages think they are always visible */
+  /* 1. background play: only while the app is in the background, pages are told they are still visible */
+  window.__vpBg = false;
+  var bg = function () { try { return window.__vpBg || window.top.__vpBg; } catch (e) { return window.__vpBg; } };
   try {
-    Object.defineProperty(document, 'hidden', { get: function () { return false; }, configurable: true });
-    Object.defineProperty(document, 'visibilityState', { get: function () { return 'visible'; }, configurable: true });
-    Object.defineProperty(document, 'webkitHidden', { get: function () { return false; }, configurable: true });
-    Object.defineProperty(document, 'webkitVisibilityState', { get: function () { return 'visible'; }, configurable: true });
-    ['visibilitychange', 'webkitvisibilitychange'].forEach(function (e) { document.addEventListener(e, function (ev) { ev.stopImmediatePropagation(); }, true); });
-    window.addEventListener('blur', function (ev) { ev.stopImmediatePropagation(); }, true);
-    window.addEventListener('pagehide', function (ev) { ev.stopImmediatePropagation(); }, true);
+    var dh = Object.getOwnPropertyDescriptor(Document.prototype, 'hidden'), dv = Object.getOwnPropertyDescriptor(Document.prototype, 'visibilityState');
+    Object.defineProperty(document, 'hidden', { get: function () { return bg() ? false : (dh && dh.get ? dh.get.call(document) : false); }, configurable: true });
+    Object.defineProperty(document, 'visibilityState', { get: function () { return bg() ? 'visible' : (dv && dv.get ? dv.get.call(document) : 'visible'); }, configurable: true });
+    ['visibilitychange', 'webkitvisibilitychange'].forEach(function (e) { document.addEventListener(e, function (ev) { if (bg()) ev.stopImmediatePropagation(); }, true); });
+    window.addEventListener('blur', function (ev) { if (bg() && (ev.target === window || ev.target === document)) ev.stopImmediatePropagation(); }, true);
+    window.addEventListener('pagehide', function (ev) { if (bg()) ev.stopImmediatePropagation(); }, true);
   } catch (e) {}
   /* 2. tell the app what is playing and which video files the page uses */
   setInterval(function () {

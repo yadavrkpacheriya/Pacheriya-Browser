@@ -40,6 +40,18 @@
     st.textContent = 'html,body{overflow:hidden!important}.__vpPipV{position:fixed!important;top:0!important;left:0!important;width:100vw!important;height:100vh!important;z-index:2147483647!important;background:#000!important;object-fit:contain!important;max-width:none!important;max-height:none!important;transform:none!important}';
     document.documentElement.appendChild(st);
   };
+  /* 5. remove common page restrictions: forced no-zoom, blocked copy / select */
+  try {
+    ['copy', 'contextmenu', 'selectstart'].forEach(function (e) { document.addEventListener(e, function (ev) { ev.stopImmediatePropagation(); }, true); });
+    var fixVp = function () {
+      var m = document.querySelector('meta[name=viewport]');
+      if (m && /user-scalable\s*=\s*(no|0)|maximum-scale\s*=\s*(1(\.0+)?|0\.\d+)\s*(,|$)/i.test(m.content)) {
+        m.setAttribute('content', m.content.replace(/,?\s*(user-scalable|maximum-scale|minimum-scale)\s*=\s*[^,]*/gi, '').replace(/^,/, '') + ',user-scalable=yes,maximum-scale=10');
+      }
+    };
+    document.addEventListener('DOMContentLoaded', fixVp);
+    new MutationObserver(fixVp).observe(document, { childList: true, subtree: true });
+  } catch (e) {}
   /* 4. YouTube: strip ad data and skip whatever still shows (best effort - YouTube changes often) */
   if (/(^|\.)youtube\.com$/.test(location.hostname)) {
     var strip = function (o) {

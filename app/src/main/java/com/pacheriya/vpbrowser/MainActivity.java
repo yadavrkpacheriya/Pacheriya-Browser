@@ -1,5 +1,6 @@
 package com.pacheriya.vpbrowser;
 
+import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.DownloadManager;
@@ -11,6 +12,7 @@ import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
+import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.Color;
@@ -22,7 +24,9 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
 import android.os.SystemClock;
+import android.text.Editable;
 import android.text.InputType;
+import android.text.TextWatcher;
 import android.util.Rational;
 import android.view.Gravity;
 import android.view.View;
@@ -33,9 +37,11 @@ import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.webkit.CookieManager;
 import android.webkit.DownloadListener;
+import android.webkit.GeolocationPermissions;
 import android.webkit.JavascriptInterface;
 import android.webkit.PermissionRequest;
 import android.webkit.URLUtil;
+import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
@@ -49,7 +55,9 @@ import android.widget.PopupMenu;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
+import androidx.webkit.ProfileStore;
 import androidx.webkit.ScriptHandler;
+import androidx.webkit.WebSettingsCompat;
 import androidx.webkit.WebViewCompat;
 import androidx.webkit.WebViewFeature;
 
@@ -62,6 +70,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.regex.Pattern;
+import org.json.JSONArray;
+import org.json.JSONObject;
 
 public class MainActivity extends Activity {
     static final String UPDATE_URL = "https://video-player-4wm.pages.dev/video-plus.user.js";
@@ -74,6 +84,8 @@ public class MainActivity extends Activity {
         String url = "";
         final ArrayList<String> media = new ArrayList<String>();
         ScriptHandler sh;
+        boolean incognito;
+        String fallback;
     }
 
     private final ArrayList<Tab> tabs = new ArrayList<Tab>();
@@ -90,6 +102,14 @@ public class MainActivity extends Activity {
     private volatile long lastPlayTs = 0;
     private boolean playing = false, inPip = false, desktop = false, adblock = true, scripts = true;
     private String injected = "", defaultUa = "", desktopUa = "";
+    private boolean dark = false, httpsUp = true;
+    private int textZoom = 100;
+    private String engine = "google";
+    private ValueCallback<Uri[]> fileCb;
+    private PermissionRequest pendPerm;
+    private String[] pendRes;
+    private LinearLayout findBar;
+    private EditText findBox;
 
     private int dp(int v) { return Math.round(v * getResources().getDisplayMetrics().density); }
 
@@ -116,6 +136,10 @@ public class MainActivity extends Activity {
         sp = getSharedPreferences("vpb", MODE_PRIVATE);
         adblock = sp.getBoolean("adblock", true);
         scripts = sp.getBoolean("scripts", true);
+        dark = sp.getBoolean("dark", false);
+        httpsUp = sp.getBoolean("https", true);
+        textZoom = sp.getInt("zoom", 100);
+        engine = sp.getString("engine", "google");
 
         String vp = sp.getString("vpjs", null);
         if (vp == null || vp.length() < 10000) vp = asset("video-plus.user.js");
@@ -136,7 +160,12 @@ public class MainActivity extends Activity {
         }
 
         Uri d = getIntent() != null ? getIntent().getData() : null;
-        newTab(d != null ? d.toString() : HOME);
+        if (d != null) newTab(d.toString());
+        else {
+            JSONArray saved = Store.get(sp, "tabs");
+            if (saved.length() == 0) newTab(HOME);
+            else for (int i = 0; i < saved.length(); i++) newTab(saved.optString(i));
+        }
 
         ui.post(new Runnable() {
             public void run() {
@@ -229,12 +258,37 @@ public class MainActivity extends Activity {
         bar.addView(tabBtn, new LinearLayout.LayoutParams(dp(40), dp(40)));
         bar.addView(menu, new LinearLayout.LayoutParams(dp(36), dp(40)));
 
+        findBar = new LinearLayout(this);
+        findBar.setOrientation(LinearLayout.HORIZONTAL);
+        findBar.setGravity(Gravity.CENTER_VERTICAL);
+        findBar.setBackgroundColor(0xFF24242B);
+        findBar.setVisibility(View.GONE);
+        findBox = new EditText(this);
+        findBox.setSingleLine(true);
+        findBox.setTextColor(Color.WHITE);
+        findBox.setHint("Find in page");
+        findBox.setHintTextColor(0xFF888888);
+        findBox.addTextChangedListener(new TextWatcher() {
+            public void beforeTextChanged(CharSequence s, int a, int b, int c) { }
+            public void onTextChanged(CharSequence s, int a, int b, int c) { }
+            public void afterTextChanged(Editable e) { if (cur != null) { if (e.length() > 0) cur.wv.findAllAsync(e.toString()); else cur.wv.clearMatches(); } }
+        });
+        TextView fPrev = iconBtn("\u25B2"), fNext = iconBtn("\u25BC"), fClose = iconBtn("\u2715");
+        fPrev.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { if (cur != null) cur.wv.findNext(false); } });
+        fNext.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { if (cur != null) cur.wv.findNext(true); } });
+        fClose.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { hideFind(); } });
+        findBar.addView(findBox, new LinearLayout.LayoutParams(0, dp(44), 1f));
+        findBar.addView(fPrev, new LinearLayout.LayoutParams(dp(44), dp(44)));
+        findBar.addView(fNext, new LinearLayout.LayoutParams(dp(44), dp(44)));
+        findBar.addView(fClose, new LinearLayout.LayoutParams(dp(44), dp(44)));
+
         pb = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
         pb.setMax(100);
         pb.setVisibility(View.INVISIBLE);
 
         content = new FrameLayout(this);
         main.addView(bar, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        main.addView(findBar, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         main.addView(pb, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(3)));
         main.addView(content, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
         root.addView(main, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
@@ -272,13 +326,28 @@ public class MainActivity extends Activity {
     }
 
     // ---------------- tabs ----------------
-    private Tab newTab(String url) {
+    private Tab newTab(String url) { return newTab(url, false); }
+
+    private Tab newTab(String url, boolean incognito) {
         Tab t = new Tab();
+        t.incognito = incognito;
         t.wv = makeWebView(t);
         tabs.add(t);
         select(t);
-        if (url != null) t.wv.loadUrl(url);
+        if (url != null) t.wv.loadUrl(upgrade(t, url));
         return t;
+    }
+
+    private String upgrade(Tab t, String u) {
+        if (httpsUp && u.startsWith("http://")) {
+            Uri p = Uri.parse(u);
+            String h = p.getHost();
+            if (h != null && !h.equals("localhost") && !h.matches("[0-9.:]+") && !h.endsWith(".local")) {
+                t.fallback = u;
+                return "https://" + u.substring(7);
+            }
+        }
+        return u;
     }
 
     private void select(Tab t) {
@@ -287,6 +356,7 @@ public class MainActivity extends Activity {
         if (t.wv.getParent() != null) ((ViewGroup) t.wv.getParent()).removeView(t.wv);
         content.addView(t.wv, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         urlBox.setText(t.url.startsWith("file:") ? "" : t.url);
+        bar.setBackgroundColor(t.incognito ? 0xFF2D2147 : 0xFF1B1B1F);
         tabBtn.setText(String.valueOf(tabs.size()));
         pb.setVisibility(View.INVISIBLE);
         refreshBadge();
@@ -296,6 +366,7 @@ public class MainActivity extends Activity {
         tabs.remove(t);
         if (t.wv.getParent() != null) ((ViewGroup) t.wv.getParent()).removeView(t.wv);
         t.wv.destroy();
+        if (t.incognito) cleanupPrivate();
         if (tabs.isEmpty()) { cur = null; newTab(HOME); }
         else select(tabs.get(tabs.size() - 1));
     }
@@ -321,7 +392,12 @@ public class MainActivity extends Activity {
     // ---------------- WebView ----------------
     private WebView makeWebView(final Tab t) {
         WebView w = new WebView(this);
+        if (t.incognito && WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE)) {
+            try { WebViewCompat.setProfile(w, "incognito"); } catch (Throwable e) { /* shared storage */ }
+        }
         WebSettings s = w.getSettings();
+        s.setTextZoom(textZoom);
+        applyDark(s);
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
         s.setMediaPlaybackRequiresUserGesture(false);
@@ -355,6 +431,10 @@ public class MainActivity extends Activity {
 
             @Override public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest r) {
                 String sc = r.getUrl().getScheme();
+                if (r.isForMainFrame() && "http".equals(sc)) {
+                    String up = upgrade(t, r.getUrl().toString());
+                    if (!up.equals(r.getUrl().toString())) { v.loadUrl(up); return true; }
+                }
                 if ("http".equals(sc) || "https".equals(sc) || "file".equals(sc) || "about".equals(sc) || "data".equals(sc) || "blob".equals(sc)) return false;
                 if ("magnet".equals(sc) || "mailto".equals(sc) || "tel".equals(sc)) {
                     try { startActivity(new Intent(Intent.ACTION_VIEW, r.getUrl())); } catch (Exception e) { toast("No app can open this link"); }
@@ -372,7 +452,14 @@ public class MainActivity extends Activity {
             }
 
             @Override public void onReceivedError(WebView v, WebResourceRequest r, android.webkit.WebResourceError e) {
-                if (r.isForMainFrame()) toast("Cannot open page: " + e.getDescription());
+                if (!r.isForMainFrame()) return;
+                if (t.fallback != null && r.getUrl().toString().startsWith("https://")) {
+                    String fb = t.fallback;
+                    t.fallback = null;
+                    v.loadUrl(fb);
+                    return;
+                }
+                toast("Cannot open page: " + e.getDescription());
             }
 
             @Override public void onReceivedSslError(WebView v, android.webkit.SslErrorHandler h, android.net.http.SslError e) {
@@ -383,6 +470,8 @@ public class MainActivity extends Activity {
             @Override public void onPageFinished(WebView v, String u) {
                 String ti = v.getTitle();
                 t.title = (ti == null || ti.isEmpty()) ? u : ti;
+                t.fallback = null;
+                if (!t.incognito && u.startsWith("http")) Store.addHistory(sp, t.title, u);
             }
         });
 
@@ -413,22 +502,296 @@ public class MainActivity extends Activity {
 
             @Override public boolean onCreateWindow(WebView v, boolean isDialog, boolean isUserGesture, Message resultMsg) {
                 if (!isUserGesture && adblock) return false;
-                Tab nt = newTab(null);
+                Tab nt = newTab(null, t.incognito);
                 WebView.WebViewTransport tr = (WebView.WebViewTransport) resultMsg.obj;
                 tr.setWebView(nt.wv);
                 resultMsg.sendToTarget();
                 return true;
             }
 
-            @Override public void onPermissionRequest(PermissionRequest r) { r.deny(); }
+            @Override public void onPermissionRequest(final PermissionRequest r) {
+                final String[] res = r.getResources();
+                boolean cam = false, mic = false;
+                for (String x : res) {
+                    if (PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(x)) cam = true;
+                    else if (PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(x)) mic = true;
+                }
+                if (!cam && !mic) { r.grant(res); return; }
+                final boolean fc = cam, fm = mic;
+                final String what = (cam ? "camera" : "") + (cam && mic ? " and " : "") + (mic ? "microphone" : "");
+                runOnUiThread(new Runnable() {
+                    public void run() {
+                        String host = r.getOrigin() == null ? "This site" : r.getOrigin().getHost();
+                        new AlertDialog.Builder(MainActivity.this).setTitle("Allow " + host + " to use your " + what + "?")
+                            .setPositiveButton("Allow", new DialogInterface.OnClickListener() {
+                                public void onClick(DialogInterface d, int w) { askRuntime(r, res, fc, fm); }
+                            })
+                            .setNegativeButton("Block", new DialogInterface.OnClickListener() {
+                                public void onClick(DialogInterface d, int w) { r.deny(); }
+                            })
+                            .setOnCancelListener(new DialogInterface.OnCancelListener() {
+                                public void onCancel(DialogInterface d) { r.deny(); }
+                            }).show();
+                    }
+                });
+            }
+
+            @Override public void onGeolocationPermissionsShowPrompt(final String origin, final GeolocationPermissions.Callback cb) {
+                new AlertDialog.Builder(MainActivity.this).setTitle("Allow " + Uri.parse(origin).getHost() + " to see your location?")
+                    .setPositiveButton("Allow", new DialogInterface.OnClickListener() {
+                        public void onClick(DialogInterface d, int w) {
+                            if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                                requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION}, 79);
+                            }
+                            cb.invoke(origin, true, false);
+                        }
+                    })
+                    .setNegativeButton("Block", new DialogInterface.OnClickListener() {
+                        public void onClick(DialogInterface d, int w) { cb.invoke(origin, false, false); }
+                    }).show();
+            }
+
+            @Override public boolean onShowFileChooser(WebView v, ValueCallback<Uri[]> cb, FileChooserParams p) {
+                if (fileCb != null) fileCb.onReceiveValue(null);
+                fileCb = cb;
+                try {
+                    startActivityForResult(p.createIntent(), 77);
+                } catch (Exception e) {
+                    fileCb = null;
+                    toast("No file picker available");
+                    return false;
+                }
+                return true;
+            }
         });
 
+        w.setOnLongClickListener(new View.OnLongClickListener() {
+            public boolean onLongClick(View v) { return longPress(t); }
+        });
         w.setDownloadListener(new DownloadListener() {
             public void onDownloadStart(String url, String ua, String cd, String mime, long len) {
                 Downloader.direct(MainActivity.this, url, ua, t.url, URLUtil.guessFileName(url, cd, mime));
             }
         });
         return w;
+    }
+
+    private void askRuntime(PermissionRequest r, String[] res, boolean cam, boolean mic) {
+        ArrayList<String> need = new ArrayList<String>();
+        if (cam && checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) need.add(Manifest.permission.CAMERA);
+        if (mic && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) need.add(Manifest.permission.RECORD_AUDIO);
+        if (need.isEmpty()) { r.grant(res); return; }
+        pendPerm = r;
+        pendRes = res;
+        requestPermissions(need.toArray(new String[0]), 78);
+    }
+
+    @Override public void onRequestPermissionsResult(int code, String[] perms, int[] grants) {
+        super.onRequestPermissionsResult(code, perms, grants);
+        if (code == 78 && pendPerm != null) {
+            boolean ok = grants.length > 0;
+            for (int g : grants) if (g != PackageManager.PERMISSION_GRANTED) ok = false;
+            if (ok) pendPerm.grant(pendRes); else pendPerm.deny();
+            pendPerm = null;
+        }
+    }
+
+    @Override protected void onActivityResult(int req, int res, Intent data) {
+        super.onActivityResult(req, res, data);
+        if (req == 77 && fileCb != null) {
+            fileCb.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(res, data));
+            fileCb = null;
+        }
+    }
+
+    private void applyDark(WebSettings s) {
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
+            try { WebSettingsCompat.setAlgorithmicDarkeningAllowed(s, dark); } catch (Throwable e) { /* ignore */ }
+        }
+    }
+
+    private void cleanupPrivate() {
+        for (Tab t : tabs) if (t.incognito) return;
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE)) {
+            try { ProfileStore.getInstance().deleteProfile("incognito"); } catch (Throwable e) { /* still in use */ }
+        }
+    }
+
+    private boolean longPress(final Tab t) {
+        WebView.HitTestResult h = t.wv.getHitTestResult();
+        final String ex = h.getExtra();
+        int ty = h.getType();
+        if (ex == null) return false;
+        final boolean link = ty == WebView.HitTestResult.SRC_ANCHOR_TYPE || ty == WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE;
+        final boolean img = ty == WebView.HitTestResult.IMAGE_TYPE;
+        if (!link && !img) return false;
+        String[] items = link
+            ? new String[]{"Open in new tab", "Open in private tab", "Copy link", "Share link", "Download"}
+            : new String[]{"Open image in new tab", "Save image", "Copy image address"};
+        new AlertDialog.Builder(this).setTitle(ex.length() > 60 ? ex.substring(0, 60) + "..." : ex)
+            .setItems(items, new DialogInterface.OnClickListener() {
+                public void onClick(DialogInterface d, int which) {
+                    if (link) {
+                        if (which == 0) newTab(ex);
+                        else if (which == 1) newTab(ex, true);
+                        else if (which == 2) copy(ex);
+                        else if (which == 3) share(ex);
+                        else Downloader.direct(MainActivity.this, ex, t.wv.getSettings().getUserAgentString(), t.url, null);
+                    } else {
+                        if (which == 0) newTab(ex);
+                        else if (which == 1) Downloader.direct(MainActivity.this, ex, t.wv.getSettings().getUserAgentString(), t.url, null);
+                        else copy(ex);
+                    }
+                }
+            }).show();
+        return true;
+    }
+
+    private void copy(String s) {
+        ClipboardManager cb = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+        cb.setPrimaryClip(ClipData.newPlainText("url", s));
+        toast("Copied");
+    }
+
+    private void share(String s) {
+        Intent i = new Intent(Intent.ACTION_SEND);
+        i.setType("text/plain");
+        i.putExtra(Intent.EXTRA_TEXT, s);
+        startActivity(Intent.createChooser(i, "Share"));
+    }
+
+    private void showFind() {
+        findBar.setVisibility(View.VISIBLE);
+        findBox.requestFocus();
+        InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+        imm.showSoftInput(findBox, 0);
+    }
+
+    private void hideFind() {
+        findBar.setVisibility(View.GONE);
+        findBox.setText("");
+        if (cur != null) cur.wv.clearMatches();
+        InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+        imm.hideSoftInputFromWindow(findBox.getWindowToken(), 0);
+    }
+
+    private void showSaved(final String key, final String title) {
+        final JSONArray a = Store.get(sp, key);
+        final int n = a.length();
+        if (n == 0) { toast("Nothing here yet"); return; }
+        final String[] items = new String[n];
+        final String[] urls = new String[n];
+        for (int i = 0; i < n; i++) {
+            JSONObject o = a.optJSONObject(n - 1 - i);
+            String t = o == null ? "" : o.optString("t", "");
+            urls[i] = o == null ? "" : o.optString("u", "");
+            items[i] = (t.isEmpty() ? urls[i] : t) + "\n" + urls[i];
+        }
+        new AlertDialog.Builder(this).setTitle(title)
+            .setItems(items, new DialogInterface.OnClickListener() {
+                public void onClick(DialogInterface d, int which) { if (cur != null) cur.wv.loadUrl(urls[which]); }
+            })
+            .setNegativeButton("Clear all", new DialogInterface.OnClickListener() {
+                public void onClick(DialogInterface d, int w) { sp.edit().putString(key, "[]").apply(); toast("Cleared"); }
+            })
+            .setPositiveButton("Close", null).show();
+    }
+
+    private String searchBase() {
+        if ("duck".equals(engine)) return "https://duckduckgo.com/?q=";
+        if ("brave".equals(engine)) return "https://search.brave.com/search?q=";
+        if ("bing".equals(engine)) return "https://www.bing.com/search?q=";
+        return "https://www.google.com/search?q=";
+    }
+
+    private void showSettings() {
+        final String[] items = {
+            "Dark mode for sites: " + (dark ? "ON" : "off"),
+            "Block ads: " + (adblock ? "ON" : "off"),
+            "Always use secure https: " + (httpsUp ? "ON" : "off"),
+            "Video Plus scripts: " + (scripts ? "ON" : "off"),
+            "Desktop site: " + (desktop ? "ON" : "off"),
+            "Text size: " + textZoom + "%",
+            "Search engine: " + engine,
+            "Clear browsing data"
+        };
+        new AlertDialog.Builder(this).setTitle("Settings")
+            .setItems(items, new DialogInterface.OnClickListener() {
+                public void onClick(DialogInterface d, int which) {
+                    switch (which) {
+                        case 0:
+                            dark = !dark;
+                            sp.edit().putBoolean("dark", dark).apply();
+                            for (Tab t : tabs) applyDark(t.wv.getSettings());
+                            cur.wv.reload();
+                            break;
+                        case 1:
+                            adblock = !adblock;
+                            sp.edit().putBoolean("adblock", adblock).apply();
+                            cur.wv.reload();
+                            break;
+                        case 2:
+                            httpsUp = !httpsUp;
+                            sp.edit().putBoolean("https", httpsUp).apply();
+                            break;
+                        case 3:
+                            toggleScripts();
+                            break;
+                        case 4:
+                            desktop = !desktop;
+                            cur.wv.getSettings().setUserAgentString(desktop ? desktopUa : defaultUa);
+                            cur.wv.reload();
+                            break;
+                        case 5: pickZoom(); return;
+                        case 6: pickEngine(); return;
+                        case 7:
+                            sp.edit().putString("hist", "[]").apply();
+                            CookieManager.getInstance().removeAllCookies(null);
+                            cur.wv.clearCache(true);
+                            toast("History, cookies and cache cleared");
+                            break;
+                    }
+                    showSettings();
+                }
+            }).setPositiveButton("Close", null).show();
+    }
+
+    private void pickZoom() {
+        final int[] v = {80, 100, 120, 150, 200};
+        String[] l = {"80%", "100%", "120%", "150%", "200%"};
+        new AlertDialog.Builder(this).setTitle("Text size").setItems(l, new DialogInterface.OnClickListener() {
+            public void onClick(DialogInterface d, int which) {
+                textZoom = v[which];
+                sp.edit().putInt("zoom", textZoom).apply();
+                for (Tab t : tabs) t.wv.getSettings().setTextZoom(textZoom);
+                showSettings();
+            }
+        }).show();
+    }
+
+    private void pickEngine() {
+        final String[] k = {"google", "duck", "brave", "bing"};
+        String[] l = {"Google", "DuckDuckGo", "Brave Search", "Bing"};
+        new AlertDialog.Builder(this).setTitle("Search engine").setItems(l, new DialogInterface.OnClickListener() {
+            public void onClick(DialogInterface d, int which) {
+                engine = k[which];
+                sp.edit().putString("engine", engine).apply();
+                showSettings();
+            }
+        }).show();
+    }
+
+    private void toggleScripts() {
+        scripts = !scripts;
+        sp.edit().putBoolean("scripts", scripts).apply();
+        for (Tab tt : tabs) {
+            if (!scripts && tt.sh != null) { tt.sh.remove(); tt.sh = null; }
+            else if (scripts && tt.sh == null && WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+                tt.sh = WebViewCompat.addDocumentStartJavaScript(tt.wv, injected, Collections.singleton("*"));
+            }
+        }
+        toast(scripts ? "Video Plus scripts on" : "Video Plus scripts off");
+        cur.wv.reload();
     }
 
     private void exitFullscreen() {
@@ -573,8 +936,8 @@ public class MainActivity extends Activity {
             return;
         }
         else if (!q.contains(" ") && q.contains(".")) url = "https://" + q;
-        else url = "https://www.google.com/search?q=" + Uri.encode(q);
-        cur.wv.loadUrl(url);
+        else url = searchBase() + Uri.encode(q);
+        cur.wv.loadUrl(upgrade(cur, url));
     }
 
     private void goBack() {
@@ -584,70 +947,53 @@ public class MainActivity extends Activity {
 
     private void showMenu(View anchor) {
         PopupMenu m = new PopupMenu(this, anchor);
+        boolean bm = cur != null && Store.isBookmarked(sp, cur.url);
         m.getMenu().add(0, 1, 0, "New tab");
-        m.getMenu().add(0, 2, 1, "Reload");
-        m.getMenu().add(0, 3, 2, "Desktop site").setCheckable(true).setChecked(desktop);
-        m.getMenu().add(0, 4, 3, "Block ads").setCheckable(true).setChecked(adblock);
-        m.getMenu().add(0, 5, 4, "Float video (picture-in-picture)");
-        m.getMenu().add(0, 6, 5, "Video Plus panel");
-        m.getMenu().add(0, 7, 6, "Downloaded files");
-        m.getMenu().add(0, 8, 7, "Copy link");
-        m.getMenu().add(0, 9, 8, "Share link");
-        m.getMenu().add(0, 11, 9, "Video Plus scripts").setCheckable(true).setChecked(scripts);
-        m.getMenu().add(0, 12, 10, "Check for app update");
-        m.getMenu().add(0, 10, 11, "Exit");
+        m.getMenu().add(0, 2, 1, "New private tab");
+        m.getMenu().add(0, 3, 2, "Reload");
+        m.getMenu().add(0, 4, 3, "Forward");
+        m.getMenu().add(0, 5, 4, "Find in page");
+        m.getMenu().add(0, 6, 5, bm ? "Remove bookmark" : "Add bookmark");
+        m.getMenu().add(0, 7, 6, "Bookmarks");
+        m.getMenu().add(0, 8, 7, "History");
+        m.getMenu().add(0, 9, 8, "Float video (picture-in-picture)");
+        m.getMenu().add(0, 10, 9, "Video Plus panel");
+        m.getMenu().add(0, 11, 10, "Translate page to English");
+        m.getMenu().add(0, 12, 11, "Downloaded files");
+        m.getMenu().add(0, 13, 12, "Copy link");
+        m.getMenu().add(0, 14, 13, "Share link");
+        m.getMenu().add(0, 15, 14, "Settings");
+        m.getMenu().add(0, 16, 15, "Check for app update");
+        m.getMenu().add(0, 17, 16, "Exit");
         m.setOnMenuItemClickListener(new PopupMenu.OnMenuItemClickListener() {
             public boolean onMenuItemClick(android.view.MenuItem it) {
                 switch (it.getItemId()) {
                     case 1: newTab(HOME); break;
-                    case 2: cur.wv.reload(); break;
-                    case 3:
-                        desktop = !desktop;
-                        cur.wv.getSettings().setUserAgentString(desktop ? desktopUa : defaultUa);
-                        cur.wv.reload();
+                    case 2: newTab(HOME, true); toast("Private tab: no history saved"); break;
+                    case 3: cur.wv.reload(); break;
+                    case 4: if (cur.wv.canGoForward()) cur.wv.goForward(); break;
+                    case 5: showFind(); break;
+                    case 6: {
+                        if (cur.url.startsWith("http")) toast(Store.toggleBookmark(sp, cur.title, cur.url) ? "Bookmark added" : "Bookmark removed");
                         break;
-                    case 4:
-                        adblock = !adblock;
-                        sp.edit().putBoolean("adblock", adblock).apply();
-                        toast(adblock ? "Ad blocking on" : "Ad blocking off");
-                        cur.wv.reload();
-                        break;
-                    case 5:
-                        if (playing) enterPip(); else toast("Start a video first");
-                        break;
-                    case 6:
+                    }
+                    case 7: showSaved("bm", "Bookmarks"); break;
+                    case 8: showSaved("hist", "History"); break;
+                    case 9: if (playing) enterPip(); else toast("Start a video first"); break;
+                    case 10:
                         cur.wv.evaluateJavascript("(function(){var r=document.querySelector('#vplus-root');if(r){r.style.display='block';var f=r.querySelector('#vp-fab');if(f)f.click();}})()", null);
                         break;
-                    case 7:
+                    case 11:
+                        if (cur.url.startsWith("http")) cur.wv.loadUrl("https://translate.google.com/translate?sl=auto&tl=en&u=" + Uri.encode(cur.url));
+                        break;
+                    case 12:
                         try { startActivity(new Intent(DownloadManager.ACTION_VIEW_DOWNLOADS)); } catch (Exception e) { toast("Open the Files app > Downloads > VideoPlus"); }
                         break;
-                    case 8: {
-                        ClipboardManager cb = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-                        cb.setPrimaryClip(ClipData.newPlainText("url", cur.url));
-                        toast("Link copied");
-                        break;
-                    }
-                    case 9: {
-                        Intent i = new Intent(Intent.ACTION_SEND);
-                        i.setType("text/plain");
-                        i.putExtra(Intent.EXTRA_TEXT, cur.url);
-                        startActivity(Intent.createChooser(i, "Share link"));
-                        break;
-                    }
-                    case 11:
-                        scripts = !scripts;
-                        sp.edit().putBoolean("scripts", scripts).apply();
-                        for (Tab tt : tabs) {
-                            if (!scripts && tt.sh != null) { tt.sh.remove(); tt.sh = null; }
-                            else if (scripts && tt.sh == null && WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
-                                tt.sh = WebViewCompat.addDocumentStartJavaScript(tt.wv, injected, Collections.singleton("*"));
-                            }
-                        }
-                        toast(scripts ? "Video Plus scripts on" : "Video Plus scripts off");
-                        cur.wv.reload();
-                        break;
-                    case 12: Updater.check(MainActivity.this, true); break;
-                    case 10: finishAndRemoveTask(); break;
+                    case 13: copy(cur.url); break;
+                    case 14: share(cur.url); break;
+                    case 15: showSettings(); break;
+                    case 16: Updater.check(MainActivity.this, true); break;
+                    case 17: finishAndRemoveTask(); break;
                 }
                 return true;
             }
@@ -693,6 +1039,9 @@ public class MainActivity extends Activity {
     @Override protected void onPause() {
         super.onPause();
         CookieManager.getInstance().flush();
+        JSONArray saved = new JSONArray();
+        for (Tab t : tabs) if (!t.incognito && t.url.startsWith("http") && saved.length() < 8) saved.put(t.url);
+        sp.edit().putString("tabs", saved.toString()).apply();
         /* the page is deliberately NOT paused, so audio keeps playing in the background */
         setBg(true);
     }

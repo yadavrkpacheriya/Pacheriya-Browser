@@ -104,7 +104,7 @@ public class MainActivity extends Activity {
     private volatile long lastPlayTs = 0;
     private boolean playing = false, inPip = false, desktop = false, adblock = true, scripts = true;
     private String injected = "", defaultUa = "", desktopUa = "";
-    private boolean dark = false, httpsUp = true;
+    private boolean dark = false, httpsUp = true, saver = false;
     private int textZoom = 100;
     private String engine = "google";
     private ValueCallback<Uri[]> fileCb;
@@ -139,6 +139,7 @@ public class MainActivity extends Activity {
         adblock = sp.getBoolean("adblock", true);
         scripts = sp.getBoolean("scripts", true);
         dark = sp.getBoolean("dark", false);
+        saver = sp.getBoolean("saver", false);
         httpsUp = sp.getBoolean("https", true);
         textZoom = sp.getInt("zoom", 100);
         engine = sp.getString("engine", "google");
@@ -399,6 +400,7 @@ public class MainActivity extends Activity {
         }
         WebSettings s = w.getSettings();
         s.setTextZoom(textZoom);
+        s.setCacheMode(saver ? WebSettings.LOAD_CACHE_ELSE_NETWORK : WebSettings.LOAD_DEFAULT);
         applyDark(s);
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
@@ -424,6 +426,14 @@ public class MainActivity extends Activity {
                 final String u = r.getUrl().toString();
                 if (adblock && AdBlock.blocked(u)) {
                     return new WebResourceResponse("text/plain", "utf-8", new ByteArrayInputStream(new byte[0]));
+                }
+                if (saver && !r.isForMainFrame()) {
+                    String low = u.toLowerCase();
+                    int qi = low.indexOf('?');
+                    String path = qi > 0 ? low.substring(0, qi) : low;
+                    if (path.matches(".*\\.(png|jpe?g|gif|webp|avif|woff2?|ttf|otf)$")) {
+                        return new WebResourceResponse("text/plain", "utf-8", new ByteArrayInputStream(new byte[0]));
+                    }
                 }
                 if (MEDIA.matcher(u).matches() && !u.contains("googlevideo.com")) {
                     ui.post(new Runnable() { public void run() { addMedia(t, u); } });
@@ -461,7 +471,13 @@ public class MainActivity extends Activity {
                     v.loadUrl(fb);
                     return;
                 }
-                toast("Cannot open page: " + e.getDescription());
+                String fu = r.getUrl().toString();
+                String html = "<html><head><meta name='viewport' content='width=device-width,initial-scale=1'></head><body style='background:#111;color:#eee;font-family:sans-serif;padding:28px'>"
+                    + "<h2>Can't open this page</h2><p style='color:#f88'>" + android.text.TextUtils.htmlEncode(String.valueOf(e.getDescription())) + "</p>"
+                    + "<p style='color:#999;word-break:break-all'>" + android.text.TextUtils.htmlEncode(fu) + "</p>"
+                    + "<p><a style='color:#8ab4ff' href='" + android.text.TextUtils.htmlEncode(fu) + "'>Try again</a></p>"
+                    + "<p style='color:#777;font-size:13px'>net::ERR_NAME_NOT_RESOLVED = the address was not found (no internet, or the network blocks it). ERR_CONNECTION_TIMED_OUT = too slow or blocked.</p></body></html>";
+                v.loadDataWithBaseURL(fu, html, "text/html", "utf-8", fu);
             }
 
             @Override public void onReceivedSslError(WebView v, android.webkit.SslErrorHandler h, android.net.http.SslError e) {
@@ -949,9 +965,9 @@ public class MainActivity extends Activity {
 
     private void showMenu(View anchor) {
         boolean bm = cur != null && Store.isBookmarked(sp, cur.url);
-        final int[] ids = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17};
+        final int[] ids = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18};
         final String[] labels = {"New tab", "Private tab", "Reload", "Forward", "Find in page", bm ? "Unbookmark" : "Bookmark",
-            "Bookmarks", "History", "Float video", "Video Plus", "Translate", "Downloads", "Copy link", "Share", "Settings", "Update", "Exit"};
+            "Bookmarks", "History", "Float video", "Video Plus", "Translate", "Downloads", "Copy link", "Share", "Settings", "Update", "Exit", saver ? "Saver: ON" : "Data saver"};
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
         GradientDrawable bg = new GradientDrawable();
@@ -1012,6 +1028,13 @@ public class MainActivity extends Activity {
             case 15: showSettings(); break;
             case 16: Updater.check(MainActivity.this, true); break;
             case 17: finishAndRemoveTask(); break;
+            case 18:
+                saver = !saver;
+                sp.edit().putBoolean("saver", saver).apply();
+                for (Tab t : tabs) t.wv.getSettings().setCacheMode(saver ? WebSettings.LOAD_CACHE_ELSE_NETWORK : WebSettings.LOAD_DEFAULT);
+                toast(saver ? "Data saver ON: images and fonts are skipped, saved pages load from cache" : "Data saver off");
+                cur.wv.reload();
+                break;
         }
     }
 

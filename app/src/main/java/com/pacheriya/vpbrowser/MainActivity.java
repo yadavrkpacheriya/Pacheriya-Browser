@@ -16,6 +16,7 @@ import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.Color;
+import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Build;
@@ -52,6 +53,7 @@ import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.PopupMenu;
+import android.widget.PopupWindow;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -946,59 +948,71 @@ public class MainActivity extends Activity {
     }
 
     private void showMenu(View anchor) {
-        PopupMenu m = new PopupMenu(this, anchor);
         boolean bm = cur != null && Store.isBookmarked(sp, cur.url);
-        m.getMenu().add(0, 1, 0, "New tab");
-        m.getMenu().add(0, 2, 1, "New private tab");
-        m.getMenu().add(0, 3, 2, "Reload");
-        m.getMenu().add(0, 4, 3, "Forward");
-        m.getMenu().add(0, 5, 4, "Find in page");
-        m.getMenu().add(0, 6, 5, bm ? "Remove bookmark" : "Add bookmark");
-        m.getMenu().add(0, 7, 6, "Bookmarks");
-        m.getMenu().add(0, 8, 7, "History");
-        m.getMenu().add(0, 9, 8, "Float video (picture-in-picture)");
-        m.getMenu().add(0, 10, 9, "Video Plus panel");
-        m.getMenu().add(0, 11, 10, "Translate page to English");
-        m.getMenu().add(0, 12, 11, "Downloaded files");
-        m.getMenu().add(0, 13, 12, "Copy link");
-        m.getMenu().add(0, 14, 13, "Share link");
-        m.getMenu().add(0, 15, 14, "Settings");
-        m.getMenu().add(0, 16, 15, "Check for app update");
-        m.getMenu().add(0, 17, 16, "Exit");
-        m.setOnMenuItemClickListener(new PopupMenu.OnMenuItemClickListener() {
-            public boolean onMenuItemClick(android.view.MenuItem it) {
-                switch (it.getItemId()) {
-                    case 1: newTab(HOME); break;
-                    case 2: newTab(HOME, true); toast("Private tab: no history saved"); break;
-                    case 3: cur.wv.reload(); break;
-                    case 4: if (cur.wv.canGoForward()) cur.wv.goForward(); break;
-                    case 5: showFind(); break;
-                    case 6: {
-                        if (cur.url.startsWith("http")) toast(Store.toggleBookmark(sp, cur.title, cur.url) ? "Bookmark added" : "Bookmark removed");
-                        break;
-                    }
-                    case 7: showSaved("bm", "Bookmarks"); break;
-                    case 8: showSaved("hist", "History"); break;
-                    case 9: if (playing) enterPip(); else toast("Start a video first"); break;
-                    case 10:
-                        cur.wv.evaluateJavascript("(function(){var r=document.querySelector('#vplus-root');if(r){r.style.display='block';var f=r.querySelector('#vp-fab');if(f)f.click();}})()", null);
-                        break;
-                    case 11:
-                        if (cur.url.startsWith("http")) cur.wv.loadUrl("https://translate.google.com/translate?sl=auto&tl=en&u=" + Uri.encode(cur.url));
-                        break;
-                    case 12:
-                        try { startActivity(new Intent(DownloadManager.ACTION_VIEW_DOWNLOADS)); } catch (Exception e) { toast("Open the Files app > Downloads > VideoPlus"); }
-                        break;
-                    case 13: copy(cur.url); break;
-                    case 14: share(cur.url); break;
-                    case 15: showSettings(); break;
-                    case 16: Updater.check(MainActivity.this, true); break;
-                    case 17: finishAndRemoveTask(); break;
+        final int[] ids = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17};
+        final String[] labels = {"New tab", "Private tab", "Reload", "Forward", "Find in page", bm ? "Unbookmark" : "Bookmark",
+            "Bookmarks", "History", "Float video", "Video Plus", "Translate", "Downloads", "Copy link", "Share", "Settings", "Update", "Exit"};
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(0xFF24242B);
+        bg.setCornerRadius(dp(14));
+        box.setBackground(bg);
+        box.setPadding(dp(6), dp(6), dp(6), dp(6));
+        final PopupWindow pop = new PopupWindow(box, (int) (getResources().getDisplayMetrics().widthPixels * 0.94f), ViewGroup.LayoutParams.WRAP_CONTENT, true);
+        pop.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+        pop.setElevation(dp(8));
+        for (int i = 0; i < ids.length; i += 3) {
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            for (int c = 0; c < 3; c++) {
+                TextView tv = new TextView(this);
+                tv.setGravity(Gravity.CENTER);
+                tv.setTextColor(Color.WHITE);
+                tv.setTextSize(13);
+                tv.setSingleLine(true);
+                if (i + c < ids.length) {
+                    final int id = ids[i + c];
+                    tv.setText(labels[i + c]);
+                    tv.setOnClickListener(new View.OnClickListener() {
+                        public void onClick(View v) { pop.dismiss(); menuAction(id); }
+                    });
                 }
-                return true;
+                row.addView(tv, new LinearLayout.LayoutParams(0, dp(44), 1f));
             }
-        });
-        m.show();
+            box.addView(row, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        }
+        pop.showAsDropDown(anchor, 0, 0, Gravity.END);
+    }
+
+    private void menuAction(int id) {
+        switch (id) {
+            case 1: newTab(HOME); break;
+            case 2: newTab(HOME, true); toast("Private tab: no history saved"); break;
+            case 3: cur.wv.reload(); break;
+            case 4: if (cur.wv.canGoForward()) cur.wv.goForward(); break;
+            case 5: showFind(); break;
+            case 6:
+                if (cur.url.startsWith("http")) toast(Store.toggleBookmark(sp, cur.title, cur.url) ? "Bookmark added" : "Bookmark removed");
+                break;
+            case 7: showSaved("bm", "Bookmarks"); break;
+            case 8: showSaved("hist", "History"); break;
+            case 9: if (playing) enterPip(); else toast("Start a video first"); break;
+            case 10:
+                cur.wv.evaluateJavascript("(function(){var r=document.querySelector('#vplus-root');if(r){r.style.display='block';var f=r.querySelector('#vp-fab');if(f)f.click();}})()", null);
+                break;
+            case 11:
+                if (cur.url.startsWith("http")) cur.wv.loadUrl("https://translate.google.com/translate?sl=auto&tl=en&u=" + Uri.encode(cur.url));
+                break;
+            case 12:
+                try { startActivity(new Intent(DownloadManager.ACTION_VIEW_DOWNLOADS)); } catch (Exception e) { toast("Open the Files app > Downloads > VideoPlus"); }
+                break;
+            case 13: copy(cur.url); break;
+            case 14: share(cur.url); break;
+            case 15: showSettings(); break;
+            case 16: Updater.check(MainActivity.this, true); break;
+            case 17: finishAndRemoveTask(); break;
+        }
     }
 
     // ---------------- picture-in-picture ----------------

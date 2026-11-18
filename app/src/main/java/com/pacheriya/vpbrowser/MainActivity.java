@@ -479,7 +479,7 @@ public class MainActivity extends Activity {
         s.setMediaPlaybackRequiresUserGesture(false);
         s.setSupportMultipleWindows(true);
         s.setJavaScriptCanOpenWindowsAutomatically(true);
-        s.setLoadWithOverviewMode(true);
+        s.setLoadWithOverviewMode(desktop);
         s.setUseWideViewPort(true);
         s.setBuiltInZoomControls(true);
         s.setDisplayZoomControls(false);
@@ -832,6 +832,7 @@ public class MainActivity extends Activity {
                         case 4:
                             desktop = !desktop;
                             cur.wv.getSettings().setUserAgentString(desktop ? desktopUa : defaultUa);
+                            cur.wv.getSettings().setLoadWithOverviewMode(desktop);
                             cur.wv.reload();
                             break;
                         case 5: pickZoom(); return;
@@ -1133,6 +1134,7 @@ public class MainActivity extends Activity {
     // ---------------- navigation / menu ----------------
     private void go(String in) {
         String q = in.trim();
+        q = q.contains(" ") ? q.replaceAll("[\\r\\n\\t]+", " ") : q.replaceAll("[\\r\\n\\t]", "");
         if (q.isEmpty() || cur == null) return;
         String url;
         if (q.matches("(?i)^[a-z][a-z0-9+.-]*://.*")) url = q;
@@ -1281,6 +1283,7 @@ public class MainActivity extends Activity {
             if (ls != null) sensors.registerListener(luxListener, ls, SensorManager.SENSOR_DELAY_NORMAL);
         } catch (Exception e) { /* no light sensor: the Auto picture uses the video alone */ }
         setBg(false);
+        Updater.resume(this);
     }
 
     private void setBg(boolean on) {

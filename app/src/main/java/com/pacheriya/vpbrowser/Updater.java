@@ -2,15 +2,23 @@ package com.pacheriya.vpbrowser;
 
 import android.app.Activity;
 import android.app.AlertDialog;
-import android.app.DownloadManager;
+import android.app.PendingIntent;
 import android.content.Context;
 import android.content.DialogInterface;
+import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageInstaller;
 import android.net.Uri;
-import android.os.Environment;
+import android.os.Build;
+import android.provider.Settings;
+import android.widget.ProgressBar;
 import android.widget.Toast;
 
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.regex.Matcher;
@@ -18,14 +26,18 @@ import java.util.regex.Pattern;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-/** Checks the GitHub release for a newer build and installs it from inside the app. */
+/** Checks the GitHub release for a newer build, downloads it inside the app and installs it through PackageInstaller. */
 final class Updater {
     static final String API = "https://api.github.com/repos/yadavrkpacheriya/Pacheriya-Browser/releases/tags/latest";
+    private static String pendUrl;
+    private static int pendBuild;
+    private static boolean busy;
 
     static void check(final Activity a, final boolean manual) {
         final SharedPreferences sp = a.getSharedPreferences("vpb", Context.MODE_PRIVATE);
         long now = System.currentTimeMillis();
         if (!manual && now - sp.getLong("lastCheck", 0) < 6L * 3600 * 1000) return;
+        if (busy) return;
         sp.edit().putLong("lastCheck", now).apply();
         new Thread(new Runnable() {
             public void run() {
@@ -57,7 +69,7 @@ final class Updater {
                     @SuppressWarnings("deprecation")
                     final int mine = a.getPackageManager().getPackageInfo(a.getPackageName(), 0).versionCode;
                     if (latest > mine) {
-                        a.runOnUiThread(new Runnable() { public void run() { prompt(a, url, latest); } });
+                        a.runOnUiThread(new Runnable() { public void run() { begin(a, url, latest, manual); } });
                     } else if (manual) {
                         toast(a, "You have the latest version");
                     }
@@ -68,30 +80,118 @@ final class Updater {
         }).start();
     }
 
+    /** Called from onResume: continue after the user allowed installs from this app. */
+    static void resume(Activity a) {
+        if (pendUrl != null && a.getPackageManager().canRequestPackageInstalls()) {
+            String u = pendUrl; int b = pendBuild;
+            pendUrl = null;
+            begin(a, u, b, true);
+        }
+    }
+
     private static void toast(final Activity a, final String s) {
         a.runOnUiThread(new Runnable() { public void run() { Toast.makeText(a, s, Toast.LENGTH_LONG).show(); } });
     }
 
-    private static void prompt(final Activity a, final String url, final int build) {
-        new AlertDialog.Builder(a).setTitle("Update available")
-            .setMessage("A new version of Video Plus Browser (build " + build + ") is ready. Update now?")
-            .setPositiveButton("Update", new DialogInterface.OnClickListener() {
-                public void onClick(DialogInterface d, int w) { start(a, url, build); }
-            })
-            .setNegativeButton("Later", null).show();
+    private static void begin(final Activity a, final String url, final int build, boolean manual) {
+        if (busy) return;
+        if (!a.getPackageManager().canRequestPackageInstalls()) {
+            pendUrl = url; pendBuild = build;
+            new AlertDialog.Builder(a).setTitle("One-time setup")
+                .setMessage("Update " + build + " is ready. Allow Video Plus Browser to install its own updates (one switch, only once). After that, updates install by themselves.")
+                .setPositiveButton("Allow", new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface d, int w) {
+                        try { a.startActivity(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + a.getPackageName()))); }
+                        catch (Exception e) { toast(a, "Open Settings > Apps > Video Plus Browser > Install unknown apps"); }
+                    }
+                })
+                .setNegativeButton("Later", new DialogInterface.OnClickListener() { public void onClick(DialogInterface d, int w) { pendUrl = null; } }).show();
+            return;
+        }
+        download(a, url, build, manual);
     }
 
-    private static void start(final Activity a, final String url, int build) {
-        try {
-            DownloadManager.Request r = new DownloadManager.Request(Uri.parse(url));
-            r.setTitle("Video Plus Browser update - tap to install");
-            r.setMimeType("application/vnd.android.package-archive");
-            r.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
-            r.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "VideoPlusBrowser-build" + build + ".apk");
-            ((DownloadManager) a.getSystemService(Context.DOWNLOAD_SERVICE)).enqueue(r);
-            Toast.makeText(a, "Downloading the update. When it finishes, tap the notification to install.", Toast.LENGTH_LONG).show();
-        } catch (Exception e) {
-            toast(a, "Update failed: " + e.getMessage());
-        }
+    private static void download(final Activity a, final String url, final int build, final boolean manual) {
+        busy = true;
+        final ProgressBar pb = new ProgressBar(a, null, android.R.attr.progressBarStyleHorizontal);
+        pb.setMax(100);
+        final AlertDialog dlg = manual ? new AlertDialog.Builder(a).setTitle("Downloading update " + build).setView(pb).setCancelable(false).show() : null;
+        new Thread(new Runnable() {
+            public void run() {
+                try {
+                    HttpURLConnection h = (HttpURLConnection) new URL(url).openConnection();
+                    h.setConnectTimeout(15000);
+                    h.setReadTimeout(30000);
+                    h.setInstanceFollowRedirects(true);
+                    h.setRequestProperty("User-Agent", "VideoPlusBrowser");
+                    if (h.getResponseCode() != 200) throw new Exception("HTTP " + h.getResponseCode());
+                    final long total = h.getContentLengthLong();
+                    File f = new File(a.getCacheDir(), "update.apk");
+                    InputStream in = h.getInputStream();
+                    OutputStream os = new FileOutputStream(f);
+                    byte[] b = new byte[65536];
+                    long got = 0;
+                    int n, last = -1;
+                    while ((n = in.read(b)) > 0) {
+                        os.write(b, 0, n);
+                        got += n;
+                        if (total > 0) {
+                            final int pc = (int) (got * 100 / total);
+                            if (pc != last) { last = pc; a.runOnUiThread(new Runnable() { public void run() { pb.setProgress(pc); } }); }
+                        }
+                    }
+                    os.close();
+                    in.close();
+                    if (total > 0 && f.length() != total) throw new Exception("download incomplete");
+                    if (f.length() < 100000) throw new Exception("file too small");
+                    final File apk = f;
+                    a.runOnUiThread(new Runnable() {
+                        public void run() {
+                            if (dlg != null) dlg.dismiss();
+                            if (manual) install(a, apk);
+                            else new AlertDialog.Builder(a).setTitle("Update " + build + " ready")
+                                .setMessage("The app will close for a second and reopen updated. Your tabs are kept.")
+                                .setPositiveButton("Update now", new DialogInterface.OnClickListener() { public void onClick(DialogInterface d, int w) { install(a, apk); } })
+                                .setNegativeButton("Later", new DialogInterface.OnClickListener() { public void onClick(DialogInterface d, int w) { busy = false; } }).show();
+                        }
+                    });
+                } catch (final Exception e) {
+                    busy = false;
+                    a.runOnUiThread(new Runnable() { public void run() { if (dlg != null) dlg.dismiss(); } });
+                    toast(a, "Update failed: " + e.getMessage());
+                }
+            }
+        }).start();
+    }
+
+    private static void install(final Activity a, final File apk) {
+        new Thread(new Runnable() {
+            public void run() {
+                try {
+                    PackageInstaller pi = a.getPackageManager().getPackageInstaller();
+                    PackageInstaller.SessionParams p = new PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL);
+                    p.setAppPackageName(a.getPackageName());
+                    if (Build.VERSION.SDK_INT >= 31) p.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED);
+                    int id = pi.createSession(p);
+                    PackageInstaller.Session s = pi.openSession(id);
+                    OutputStream os = s.openWrite("update", 0, apk.length());
+                    InputStream in = new FileInputStream(apk);
+                    byte[] b = new byte[65536];
+                    int n;
+                    while ((n = in.read(b)) > 0) os.write(b, 0, n);
+                    in.close();
+                    s.fsync(os);
+                    os.close();
+                    Intent it = new Intent(a, InstallReceiver.class).setAction("com.pacheriya.vpbrowser.INSTALL_DONE");
+                    int fl = PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT >= 31 ? PendingIntent.FLAG_MUTABLE : 0);
+                    PendingIntent pend = PendingIntent.getBroadcast(a, id, it, fl);
+                    toast(a, "Updating... the app will restart for a second");
+                    s.commit(pend.getIntentSender());
+                } catch (Exception e) {
+                    busy = false;
+                    toast(a, "Update failed: " + e.getMessage());
+                }
+            }
+        }).start();
     }
 }

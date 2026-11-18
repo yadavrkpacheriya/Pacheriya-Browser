@@ -108,7 +108,7 @@ public class MainActivity extends Activity {
     private LinearLayout main, bar;
     private EditText urlBox;
     private TextView tabBtn, dlHead;
-    private LinearLayout dlPanel, dlList;
+    private LinearLayout dlPanel, dlList, navBar;
     private FrameLayout dlIcon;
     private TextView dlBadge;
     private android.widget.ScrollView dlScroll;
@@ -411,6 +411,26 @@ public class MainActivity extends Activity {
         main.addView(dlPanel, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         main.addView(pb, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(3)));
         main.addView(content, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        navBar = new LinearLayout(this);
+        navBar.setOrientation(LinearLayout.HORIZONTAL);
+        navBar.setBackgroundColor(0xFF1B1B22);
+        String[] nl = {"\u2039", "\u203A", "\u2302", "\u27F3"};
+        for (int ni = 0; ni < nl.length; ni++) {
+            final int nid2 = ni;
+            TextView nb = iconBtn(nl[ni]);
+            nb.setTextSize(nid2 == 3 ? 24 : 30);
+            nb.setOnClickListener(new View.OnClickListener() {
+                public void onClick(View v) {
+                    if (cur == null) return;
+                    if (nid2 == 0) goBack();
+                    else if (nid2 == 1) { if (cur.wv.canGoForward()) cur.wv.goForward(); else toast("No page to go forward to"); }
+                    else if (nid2 == 2) cur.wv.loadUrl(HOME);
+                    else cur.wv.reload();
+                }
+            });
+            navBar.addView(nb, new LinearLayout.LayoutParams(0, dp(46), 1f));
+        }
+        main.addView(navBar, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         root.addView(main, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
 
@@ -1320,6 +1340,7 @@ public class MainActivity extends Activity {
         super.onPictureInPictureModeChanged(in, c);
         inPip = in;
         bar.setVisibility(in ? View.GONE : View.VISIBLE);
+        navBar.setVisibility(in ? View.GONE : View.VISIBLE);
         pb.setVisibility(View.GONE);
         refreshBadge();
         if (cur != null && customView == null) cur.wv.evaluateJavascript("window.__vpPip&&window.__vpPip(" + in + ")", null);

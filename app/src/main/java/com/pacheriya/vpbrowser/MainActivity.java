@@ -142,13 +142,16 @@ public class MainActivity extends Activity {
         @Override public void onAccuracyChanged(Sensor s, int a) { }
     };
     private float lastScale = 0f;
-    private boolean immersive = false;
+    private boolean immersive = false, picTr = true;
+    private String ocrJs = "";
+    private final java.util.concurrent.ExecutorService ocrPool = java.util.concurrent.Executors.newFixedThreadPool(2);
 
     private void setReadMode(boolean b) {
         immersive = b;
         if (inPip) return;
         bar.setVisibility(b ? View.GONE : View.VISIBLE);
         navBar.setVisibility(b ? View.GONE : View.VISIBLE);
+        if (customView == null) hideBars(b);
         refreshBadge();
     }
     private WebView subWv;
@@ -260,8 +263,10 @@ public class MainActivity extends Activity {
         if (vp == null || vp.length() < 10000 || scriptVer(vp) < scriptVer(vpa)) vp = vpa;
         String css = "(function(){var c=" + jq(asset("vp-cosmetic.css")) + ";function a(){var p=document.head||document.documentElement;if(!p){setTimeout(a,15);return}var s=document.createElement('style');s.textContent=c;p.appendChild(s)}a()})();";
         readerJs = asset("reader.js");
+        ocrJs = asset("ocr.js");
+        picTr = sp.getBoolean("pictr", true);
         autoPrev = sp.getBoolean("autoprev", true);
-        autoTr = sp.getString("autotr", "");
+        autoTr = sp.getString("autotr", "en");
         injected = asset("vp-core.js") + "\n" + css + "\n" + vp;
 
         String ua = WebSettings.getDefaultUserAgent(this);
@@ -668,6 +673,7 @@ public class MainActivity extends Activity {
                 if (!t.incognito && u.startsWith("http")) Store.addHistory(sp, t.title, u);
                 if (u.startsWith("http")) ui.postDelayed(new Runnable() { public void run() { if (t == cur) fitZoom(t, 0); } }, 900);
                 if (!autoTr.isEmpty() && u.startsWith("http")) v.evaluateJavascript(readerJs + ";window.__vpReader.page('" + autoTr + "')", null);
+                if (picTr && u.startsWith("http")) v.evaluateJavascript(ocrJs + ";window.__vpPic&&window.__vpPic.start()", null);
             }
         });
 
@@ -1027,6 +1033,21 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface public String pre(String host) { return topOrigins(host); }
         @JavascriptInterface public boolean prev() { return autoPrev; }
+        @JavascriptInterface public boolean pic() { return picTr; }
+        @JavascriptInterface public void ocr(final int id, final String url) {
+            if (!picTr || url == null || url.length() > 3000 || !(url.startsWith("https://") || url.startsWith("http://"))) return;
+            final String ref = t.url != null && t.url.startsWith("http") ? t.url : null;
+            final String ck = CookieManager.getInstance().getCookie(url);
+            final String tl = autoTr.isEmpty() ? "en" : autoTr;
+            final int gen = t.gen;
+            ocrPool.execute(new Runnable() {
+                public void run() {
+                    final String res = gen == t.gen || ref == null ? Ocr.run(url, ref, ck, "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Mobile Safari/537.36", tl) : "";
+                    if (res.isEmpty()) return;
+                    ui.post(new Runnable() { public void run() { try { t.wv.evaluateJavascript("window.__vpOcr&&window.__vpOcr(" + id + "," + org.json.JSONObject.quote(res) + ")", null); } catch (Exception e) { /* ignore */ } } });
+                }
+            });
+        }
         @JavascriptInterface public void chrome(final boolean hide) {
             ui.post(new Runnable() { public void run() { if (t == cur) setReadMode(hide); } });
         }
@@ -1367,9 +1388,9 @@ public class MainActivity extends Activity {
 
     private void showMenu(View anchor) {
         boolean bm = cur != null && Store.isBookmarked(sp, cur.url);
-        final int[] ids = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21};
+        final int[] ids = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22};
         final String[] labels = {"New tab", "Private tab", "Reload", "Forward", "Find in page", bm ? "Unbookmark" : "Bookmark",
-            "Bookmarks", "History", "Float video", "Video Plus", "Translate", "Downloads", "Copy link", "Share", "Settings", "Update", "Exit", saver ? "Saver: ON" : "Data saver", "Reading mode", autoTr.isEmpty() ? "Auto-translate: off" : "Auto: " + autoTr.toUpperCase(), autoPrev ? "Preview: ON" : "Preview: off"};
+            "Bookmarks", "History", "Float video", "Video Plus", "Translate", "Downloads", "Copy link", "Share", "Settings", "Update", "Exit", saver ? "Saver: ON" : "Data saver", "Reading mode", autoTr.isEmpty() ? "Auto-translate: off" : "Auto: " + autoTr.toUpperCase(), autoPrev ? "Preview: ON" : "Preview: off", picTr ? "Picture translate: ON" : "Picture translate: off"};
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
         GradientDrawable bg = new GradientDrawable();
@@ -1432,6 +1453,12 @@ public class MainActivity extends Activity {
             case 17: finishAndRemoveTask(); break;
             case 19:
                 if (cur.url.startsWith("http")) cur.wv.evaluateJavascript(readerJs + ";window.__vpReader.auto='" + autoTr + "';window.__vpReader.toggle()", null);
+                break;
+            case 22:
+                picTr = !picTr;
+                sp.edit().putBoolean("pictr", picTr).apply();
+                if (cur != null) cur.wv.evaluateJavascript(picTr ? ocrJs + ";window.__vpPic&&window.__vpPic.start()" : "window.__vpPic&&window.__vpPic.stop()", null);
+                toast(picTr ? "Picture translate ON: words inside comic pages are shown in English" : "Picture translate off");
                 break;
             case 21:
                 autoPrev = !autoPrev;

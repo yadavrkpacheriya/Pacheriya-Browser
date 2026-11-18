@@ -144,12 +144,12 @@
     function showBar(s) { bar.style.transform = s ? 'none' : 'translateY(-110%)'; bar.__hid = !s; }
     ov.addEventListener('scroll', function () {
       var y = ov.scrollTop; if (y > lastY + 8 && y > 60) showBar(false); else if (y < lastY - 8) showBar(true); lastY = y;
-      if (y + ov.clientHeight > ov.scrollHeight - 1800) more();
+      if (y + ov.clientHeight > ov.scrollHeight - 5000) more();
     }, { passive: true });
     box.addEventListener('click', function () { showBar(!!bar.__hid); });
     R.on = true; paint(); chrome(true);
     if (R.auto) { R.tl = R.auto; tb.textContent = 'Translate: ' + R.tl.toUpperCase(); doTr(); }
-    if (ov.scrollHeight < ov.clientHeight + 1800) more();
+    setTimeout(more, 600);
   }
   function doTr() {
     var ps = Array.prototype.filter.call(box.children, function (c) { return c.__src; });

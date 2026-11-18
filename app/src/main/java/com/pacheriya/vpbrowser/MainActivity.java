@@ -142,6 +142,7 @@ public class MainActivity extends Activity {
         @Override public void onAccuracyChanged(Sensor s, int a) { }
     };
     private boolean playing = false, inPip = false, desktop = false, adblock = true, scripts = true;
+    private boolean autoPrev = true;
     private String readerJs = "";
     private String autoTr = "";
     private String injected = "", defaultUa = "", desktopUa = "";
@@ -219,6 +220,7 @@ public class MainActivity extends Activity {
         if (vp == null || vp.length() < 10000 || scriptVer(vp) < scriptVer(vpa)) vp = vpa;
         String css = "(function(){var c=" + jq(asset("vp-cosmetic.css")) + ";function a(){var p=document.head||document.documentElement;if(!p){setTimeout(a,15);return}var s=document.createElement('style');s.textContent=c;p.appendChild(s)}a()})();";
         readerJs = asset("reader.js");
+        autoPrev = sp.getBoolean("autoprev", true);
         autoTr = sp.getString("autotr", "");
         injected = asset("vp-core.js") + "\n" + css + "\n" + vp;
 
@@ -971,6 +973,7 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface public String pre(String host) { return topOrigins(host); }
+        @JavascriptInterface public boolean prev() { return autoPrev; }
         @JavascriptInterface public void toast(final String s) { ui.post(new Runnable() { public void run() { MainActivity.this.toast(s); } }); }
         @JavascriptInterface public void trAsync(final int id, final String text, final String tl) {
             new Thread(new Runnable() {
@@ -1242,9 +1245,9 @@ public class MainActivity extends Activity {
 
     private void showMenu(View anchor) {
         boolean bm = cur != null && Store.isBookmarked(sp, cur.url);
-        final int[] ids = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20};
+        final int[] ids = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21};
         final String[] labels = {"New tab", "Private tab", "Reload", "Forward", "Find in page", bm ? "Unbookmark" : "Bookmark",
-            "Bookmarks", "History", "Float video", "Video Plus", "Translate", "Downloads", "Copy link", "Share", "Settings", "Update", "Exit", saver ? "Saver: ON" : "Data saver", "Reading mode", autoTr.isEmpty() ? "Auto-translate: off" : "Auto: " + autoTr.toUpperCase()};
+            "Bookmarks", "History", "Float video", "Video Plus", "Translate", "Downloads", "Copy link", "Share", "Settings", "Update", "Exit", saver ? "Saver: ON" : "Data saver", "Reading mode", autoTr.isEmpty() ? "Auto-translate: off" : "Auto: " + autoTr.toUpperCase(), autoPrev ? "Preview: ON" : "Preview: off"};
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
         GradientDrawable bg = new GradientDrawable();
@@ -1307,6 +1310,12 @@ public class MainActivity extends Activity {
             case 17: finishAndRemoveTask(); break;
             case 19:
                 if (cur.url.startsWith("http")) cur.wv.evaluateJavascript(readerJs + ";window.__vpReader.auto='" + autoTr + "';window.__vpReader.toggle()", null);
+                break;
+            case 21:
+                autoPrev = !autoPrev;
+                sp.edit().putBoolean("autoprev", autoPrev).apply();
+                for (Tab t : tabs) { try { t.wv.evaluateJavascript("window.__vpPrevOn=" + autoPrev, null); } catch (Exception e) { /* ignore */ } }
+                toast(autoPrev ? "Video previews ON: the thumbnail in the middle of the screen plays" : "Video previews off");
                 break;
             case 20:
                 autoTr = autoTr.isEmpty() ? "en" : (autoTr.equals("en") ? "hi" : "");

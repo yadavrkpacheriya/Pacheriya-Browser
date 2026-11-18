@@ -989,7 +989,8 @@ public class MainActivity extends Activity {
     }
 
     private void addMedia(final Tab t, final String u) {
-        if (u.startsWith("blob:") || t.media.contains(u)) return;
+        if (u.startsWith("blob:") || t.media.contains(u) || t.entries.size() >= 12) return;
+        if (u.toLowerCase().matches(".*(preview|thumb|sprite|teaser|trailer|storyboard|/gif/|\\.gif).*")) return;
         t.media.add(u);
         if (t.media.size() > 40) t.media.remove(0);
         final Entry en = new Entry();
@@ -1000,7 +1001,7 @@ public class MainActivity extends Activity {
         final String ua = t.wv.getSettings().getUserAgentString();
         final String ref = t.url;
         if (t == cur) rebuildPanel();
-        resolver.execute(new Runnable() {
+        ui.postDelayed(new Runnable() { public void run() { resolver.execute(new Runnable() {
             public void run() {
                 final List<Opt> opts = new ArrayList<Opt>();
                 final List<String> vurls = new ArrayList<String>();
@@ -1047,7 +1048,7 @@ public class MainActivity extends Activity {
                 final boolean fm = master;
                 ui.post(new Runnable() { public void run() { applyResolved(t, g, en, opts, fm ? vurls : null); } });
             }
-        });
+        }); } }, 1500);
     }
 
     private static String mb(long b) {

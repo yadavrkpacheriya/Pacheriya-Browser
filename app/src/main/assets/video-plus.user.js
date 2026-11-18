@@ -135,16 +135,30 @@
     else if (lux !== null && lux < 15) { br = Math.min(br, 1.15); ct = 1.04; sat = 1.08; }   /* dark room: easy on the eyes */
     br = Math.min(1.4, br);
     AUTO.br += (br - AUTO.br) * 0.25; AUTO.ct += (ct - AUTO.ct) * 0.25; AUTO.sat += (sat - AUTO.sat) * 0.25;
-    applyLook(true);
+    if (Math.abs(AUTO.br - (AUTO.lb || 0)) > 0.025 || Math.abs(AUTO.ct - (AUTO.lc || 0)) > 0.025 || Math.abs(AUTO.sat - (AUTO.ls || 0)) > 0.025) { AUTO.lb = AUTO.br; AUTO.lc = AUTO.ct; AUTO.ls = AUTO.sat; applyLook(true); }
   }
   setInterval(autoTick, 1000);
 
   /* ---------- look ---------- */
+  /* safety net: if a playing video stops showing new frames, take every picture effect off it for good */
+  function guard(v) {
+    if (v.__vpG || !v.requestVideoFrameCallback) return;
+    v.__vpG = 1;
+    var t = Date.now(), cb = function () { t = Date.now(); v.requestVideoFrameCallback(cb); };
+    v.requestVideoFrameCallback(cb);
+    setInterval(function () {
+      if (!v.paused && !v.ended && v.readyState >= 3 && Date.now() - t > 2500 && !v.__vpSafe) {
+        v.__vpSafe = 1; v.style.removeProperty('filter'); v.style.removeProperty('box-shadow');
+      }
+    }, 1000);
+  }
   function applyLook(quiet) {
     var L = S.auto ? { ct: +AUTO.ct.toFixed(3), sat: +AUTO.sat.toFixed(3), br: +AUTO.br.toFixed(3), warm: 0 } : S;
     var neutral = L.ct === 1 && L.sat === 1 && L.warm === 0 && L.br === 1;
     var f = 'contrast(' + L.ct + ') saturate(' + L.sat + ') brightness(' + L.br + ')' + (L.warm > 0 ? ' sepia(' + (L.warm * 0.25) + ')' : '');
     vids.forEach(function (v) {
+      guard(v);
+      if (v.__vpSafe || v.clientHeight < 200) { if (v.style.getPropertyValue('filter')) v.style.removeProperty('filter'); return; }
       if (hdMap.has(v)) { if (v.style.getPropertyValue('filter')) v.style.removeProperty('filter'); }
       else if (neutral) { if (v.style.getPropertyValue('filter')) v.style.removeProperty('filter'); } else if (v.style.getPropertyValue('filter') !== f) v.style.setProperty('filter', f, 'important');
       if (S.theater) v.style.setProperty('box-shadow', '0 0 0 100vmax rgba(0,0,0,.93)', 'important'); else v.style.removeProperty('box-shadow');
@@ -212,7 +226,7 @@
       return true;
     } catch (e) { return false; }
   }
-  document.addEventListener('play', function (e) { var v = e.target; if (v instanceof HTMLVideoElement && S.gain > 1) setGain(v, S.gain); }, true);
+  document.addEventListener('play', function (e) { var v = e.target; if (v instanceof HTMLVideoElement && S.gain > 1 && !v.muted && (!isFinite(v.duration) || v.duration > 30)) setGain(v, S.gain); }, true);
 
   /* ---------- HD enhancer: GPU bicubic upscale + sharpen (only where the site lets the page read the video) ---------- */
   var HD_VS = 'attribute vec2 p;varying vec2 t;void main(){t=vec2(p.x*.5+.5,.5-p.y*.5);gl_Position=vec4(p,0.,1.);}';

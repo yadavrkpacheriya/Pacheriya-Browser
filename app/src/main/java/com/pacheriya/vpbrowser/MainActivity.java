@@ -1000,6 +1000,34 @@ public class MainActivity extends Activity {
                 }
             }).start();
         }
+        @JavascriptInterface public void img(final int id, final String url) {
+            if (t.url == null || !t.url.startsWith("file:///android_asset/") || url == null || !url.startsWith("https://")) return;
+            String hh = Uri.parse(url).getHost();
+            if (hh == null || !(hh.equals("uploads.mangadex.org") || hh.endsWith(".mangadex.network") || hh.endsWith(".mangadex.org"))) return;
+            new Thread(new Runnable() {
+                public void run() {
+                    String res = "";
+                    try {
+                        java.net.HttpURLConnection h = (java.net.HttpURLConnection) new java.net.URL(url).openConnection();
+                        h.setConnectTimeout(12000);
+                        h.setReadTimeout(30000);
+                        h.setRequestProperty("User-Agent", "VideoPlusBrowser/1.0 (personal reader)");
+                        if (h.getResponseCode() < 400) {
+                            java.io.InputStream in = h.getInputStream();
+                            java.io.ByteArrayOutputStream bo = new java.io.ByteArrayOutputStream();
+                            byte[] b = new byte[16384];
+                            int n;
+                            while ((n = in.read(b)) > 0) bo.write(b, 0, n);
+                            String ct = h.getContentType();
+                            if (ct == null || !ct.startsWith("image/")) ct = "image/jpeg";
+                            res = "data:" + ct + ";base64," + android.util.Base64.encodeToString(bo.toByteArray(), android.util.Base64.NO_WRAP);
+                        }
+                    } catch (Exception e) { res = ""; }
+                    final String fr = res;
+                    ui.post(new Runnable() { public void run() { try { t.wv.evaluateJavascript("window.__vpImg&&window.__vpImg(" + id + "," + org.json.JSONObject.quote(fr) + ")", null); } catch (Exception e) { /* ignore */ } } });
+                }
+            }).start();
+        }
         @JavascriptInterface public void toast(final String s) { ui.post(new Runnable() { public void run() { MainActivity.this.toast(s); } }); }
         @JavascriptInterface public void trAsync(final int id, final String text, final String tl) {
             new Thread(new Runnable() {

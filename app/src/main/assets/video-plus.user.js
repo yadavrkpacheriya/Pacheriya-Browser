@@ -14,7 +14,7 @@
   if (window.__vplus) return;
   window.__vplus = 1;
 
-  var S = { auto: true, sharp: 0, ct: 1, sat: 1, warm: 0, br: 1, gest: true, theater: false, autofs: true, autorot: true, adblock: true, boost: true, rate: 1, gain: 1, hdx: false, shp: 0.7, model: 'base' };
+  var S = { auto: true, sharp: 0, ct: 1, sat: 1, warm: 0, br: 1, gest: true, theater: false, autofs: true, autorot: true, adblock: true, boost: true, rate: 1, gain: 1, hdx: false, shp: 0.7, model: 'base', asub: true };
   var hdMap = new WeakMap();
   try { Object.assign(S, JSON.parse(localStorage.getItem('vplus2') || '{}')); } catch (e) {}
   var save = function () { try { localStorage.setItem('vplus2', JSON.stringify(S)); } catch (e) {} };
@@ -444,7 +444,7 @@
     h += '<div><span style="opacity:.7;margin-right:4px">Speed</span>';
     [0.5, 1, 1.25, 1.5, 2, 3, 4].forEach(function (r) { h += '<button data-s="' + r + '" class="' + ((S.rate || 1) === r ? 'on' : '') + '">' + r + 'x</button>'; });
     h += '</div>';
-    h += '<div><button id="vp-loud" class="' + (S.gain > 1 ? 'on' : '') + '">Loud audio (3x)</button><button id="vp-hd" class="' + (S.hdx === true ? 'on' : '') + '">HD boost (sharpen)</button><button id="vp-fl">Fullscreen + landscape</button><button id="vp-th" class="' + (S.theater ? 'on' : '') + '">Theater dim</button><button id="vp-ge" class="' + (S.gest ? 'on' : '') + '">Swipe gestures</button><button id="vp-bo" class="' + (S.boost !== false ? 'on' : '') + '">Load booster</button><button id="vp-ab" class="' + (S.adblock !== false ? 'on' : '') + '">Block ads</button><button id="vp-af" class="' + (S.autofs ? 'on' : '') + '">Auto fullscreen on play</button><button id="vp-ar" class="' + (S.autorot ? 'on' : '') + '">Auto landscape</button><button id="vp-pip">Mini player (in page)</button><button id="vp-bg">Float over apps (PiP)</button><button id="vp-lp">Loop</button><button id="vp-ai" class="' + (sub ? 'on' : '') + '">Auto English subtitles</button><button id="vp-md">AI model: ' + ({ tiny: 'Fast', base: 'Better', small: 'Best (slow)' }[S.model || 'base']) + '</button><button id="vp-ss">Save subtitles (.srt)</button><button id="vp-srt">Load subtitles (.srt)</button><button id="vp-lc">All apps: Live Caption (subtitles)</button><button id="vp-sa">All apps: Sound Amplifier (loud)</button><button id="vp-x">Close</button></div>';
+    h += '<div><button id="vp-loud" class="' + (S.gain > 1 ? 'on' : '') + '">Loud audio (3x)</button><button id="vp-hd" class="' + (S.hdx === true ? 'on' : '') + '">HD boost (sharpen)</button><button id="vp-fl">Fullscreen + landscape</button><button id="vp-th" class="' + (S.theater ? 'on' : '') + '">Theater dim</button><button id="vp-ge" class="' + (S.gest ? 'on' : '') + '">Swipe gestures</button><button id="vp-bo" class="' + (S.boost !== false ? 'on' : '') + '">Load booster</button><button id="vp-ab" class="' + (S.adblock !== false ? 'on' : '') + '">Block ads</button><button id="vp-af" class="' + (S.autofs ? 'on' : '') + '">Auto fullscreen on play</button><button id="vp-ar" class="' + (S.autorot ? 'on' : '') + '">Auto landscape</button><button id="vp-pip">Mini player (in page)</button><button id="vp-bg">Float over apps (PiP)</button><button id="vp-lp">Loop</button><button id="vp-as" class="' + (S.asub !== false ? 'on' : '') + '">Subtitles always on</button><button id="vp-ai" class="' + (sub ? 'on' : '') + '">Auto English subtitles</button><button id="vp-md">AI model: ' + ({ tiny: 'Fast', base: 'Better', small: 'Best (slow)' }[S.model || 'base']) + '</button><button id="vp-ss">Save subtitles (.srt)</button><button id="vp-srt">Load subtitles (.srt)</button><button id="vp-lc">All apps: Live Caption (subtitles)</button><button id="vp-sa">All apps: Sound Amplifier (loud)</button><button id="vp-x">Close</button></div>';
     panel.innerHTML = h; var se = $('#vp-st'); if (se) se.textContent = statText();
     panel.querySelectorAll('[data-p]').forEach(function (b) { b.onclick = function () { Object.assign(S, PRE[b.dataset.p]); applyLook(); build(); panel.classList.add('on'); }; });
     panel.querySelectorAll('[data-sh]').forEach(function (i) { i.oninput = function () { S.shp = parseFloat(i.value); save(); }; });
@@ -459,6 +459,7 @@
     }
     $('#vp-lc').onclick = function () { sysOpen('android.settings.ACCESSIBILITY_SETTINGS', 'Live Caption: press a volume key, tap the caption icon. Or Settings > Accessibility > Live Caption'); };
     $('#vp-sa').onclick = function () { sysOpen('android.settings.ACCESSIBILITY_SETTINGS', 'Sound Amplifier: Settings > Accessibility > Sound Amplifier. Plug in headphones first'); };
+    $('#vp-as').onclick = function () { S.asub = S.asub === false; save(); this.classList.toggle('on', S.asub !== false); say('Auto subtitles ' + (S.asub !== false ? 'on (any language to English)' : 'off')); };
     $('#vp-ai').onclick = function () { var v = target(); if (!v) { say('No video found'); return; } subOn(v); this.classList.toggle('on', !!sub); };
     $('#vp-loud').onclick = function () {
       var v = target(), btn = this; if (!v) { say('No video found'); return; }
@@ -689,6 +690,15 @@
     if (!t || Math.abs(t.clientX - k.x) > 12 || Math.abs(t.clientY - k.y) > 12 || Date.now() - k.t > 500) return;
     var h = hit(t); if (h) showBar(h.v);
   }, { passive: true, capture: true });
+  document.addEventListener('play', function (e) {
+    var v = e.target; if (!(v instanceof HTMLVideoElement) || S.asub === false || v.__vpAsub) return;
+    v.__vpAsub = 1;
+    setTimeout(function () {
+      if (sub || v.paused || v.loop || (v.muted && v.autoplay)) { v.__vpAsub = 0; return; }
+      var r = v.getBoundingClientRect(); if (!document.fullscreenElement && (r.height < innerHeight * 0.3 || r.width < 200)) { v.__vpAsub = 0; return; }
+      try { subOn(v); } catch (x) {}
+    }, 3000);
+  }, true);
   document.addEventListener('play', function (e) { if (e.target instanceof HTMLVideoElement && !isPrev(e.target) && e.target.getBoundingClientRect().width > 200) showBar(e.target, 3000); }, true);
   document.addEventListener('fullscreenchange', function () { var v = barV || target(); if (v) setTimeout(function () { showBar(v, 3500); }, 500); });
 

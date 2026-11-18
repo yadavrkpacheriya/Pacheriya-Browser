@@ -974,6 +974,12 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface public String pre(String host) { return topOrigins(host); }
         @JavascriptInterface public boolean prev() { return autoPrev; }
+        @JavascriptInterface public float getVol() {
+            try { android.media.AudioManager am = (android.media.AudioManager) getSystemService(AUDIO_SERVICE); return am.getStreamVolume(android.media.AudioManager.STREAM_MUSIC) / (float) am.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC); } catch (Throwable e) { return -1f; }
+        }
+        @JavascriptInterface public void setVol(float f) {
+            try { android.media.AudioManager am = (android.media.AudioManager) getSystemService(AUDIO_SERVICE); int mx = am.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC); am.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, Math.max(0, Math.min(mx, Math.round(f * mx))), 0); } catch (Throwable e) { /* ignore */ }
+        }
         @JavascriptInterface public void http(final int id, final String url) {
             if (t.url == null || !t.url.startsWith("file:///android_asset/") || url == null || !url.startsWith("https://api.mangadex.org/")) return;
             new Thread(new Runnable() {

@@ -691,14 +691,22 @@
   document.addEventListener('touchstart', function (e) {
     if (!S.gest || e.touches.length !== 1 || root.contains(e.target)) { g = null; return; }
     var t = e.touches[0], h = hit(t); if (!h) { g = null; return; }
-    g = { v: h.v, r: h.r, x: t.clientX, y: t.clientY, mode: null, t0: h.v.currentTime, vol: h.v.volume, br: S.br, left: (rot ? (t.clientY - h.r.top) < h.r.height / 2 : (t.clientX - h.r.left) < h.r.width / 2), rot: rot, dt: 0 };
+    g = { v: h.v, r: h.r, x: t.clientX, y: t.clientY, mode: null, t0: h.v.currentTime, vol: h.v.volume, br: S.br, left: (rot ? (t.clientY - h.r.top) < h.r.height / 2 : (t.clientX - h.r.left) < h.r.width / 2), rot: rot, dt: 0, sys: -1,
+      lock: !!(document.fullscreenElement || rot || (!(h.v.loop || h.v.__vpNoCore || (h.v.muted && h.v.autoplay)) && h.r.height >= innerHeight * 0.4)) };
+    try { if (window.VPApp && VPApp.getVol) g.sys = VPApp.getVol(); } catch (e) {}
   }, { passive: true, capture: true });
   document.addEventListener('touchmove', function (e) {
     if (!g) return; var t = e.touches[0], sx = t.clientX - g.x, sy = t.clientY - g.y, dx = g.rot ? sy : sx, dy = g.rot ? -sx : sy;
+    if (g.lock && e.cancelable) e.preventDefault();
     if (!g.mode) { if (Math.abs(dx) < 16 && Math.abs(dy) < 16) return; g.mode = Math.abs(dx) > Math.abs(dy) ? 'seek' : (g.left ? 'bright' : 'vol'); }
     e.preventDefault(); e.stopPropagation();
     if (g.mode === 'seek' && g.v.duration) { g.dt = dx / (g.rot ? g.r.height : g.r.width) * 120; say((g.dt >= 0 ? '+' : '-') + Math.abs(Math.round(g.dt)) + 's'); }
-    else if (g.mode === 'vol') { g.v.muted = false; g.v.volume = Math.min(1, Math.max(0, g.vol - dy / ((g.rot ? g.r.width : g.r.height) * 0.8))); say('\uD83D\uDD0A ' + Math.round(g.v.volume * 100) + '%'); }
+    else if (g.mode === 'vol') {
+      var dv = -dy / ((g.rot ? g.r.width : g.r.height) * 0.8);
+      g.v.muted = false;
+      if (g.sys >= 0) { try { g.v.volume = 1; } catch (e) {} var nv = Math.min(1, Math.max(0, g.sys + dv)); VPApp.setVol(nv); say('\uD83D\uDD0A ' + Math.round(nv * 100) + '%'); }
+      else { g.v.volume = Math.min(1, Math.max(0, g.vol + dv)); say('\uD83D\uDD0A ' + Math.round(g.v.volume * 100) + '%'); }
+    }
     else if (g.mode === 'bright') { S.br = Math.min(1.8, Math.max(0.2, g.br - dy / ((g.rot ? g.r.width : g.r.height) * 0.8))); applyLook(); say('\u2600 ' + Math.round(S.br * 100) + '%'); }
   }, { passive: false, capture: true });
   document.addEventListener('touchend', function (e) {

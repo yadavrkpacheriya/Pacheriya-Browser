@@ -560,6 +560,16 @@ public class MainActivity extends Activity {
                         return new WebResourceResponse("text/plain", "utf-8", new ByteArrayInputStream(new byte[0]));
                     }
                 }
+                if (!r.isForMainFrame() && !u.contains("googlevideo.com") && u.toLowerCase().matches("^[^?#]*\\.m3u8(\\?.*)?$")) {
+                    String before = AutoQuality.lastInfo;
+                    WebResourceResponse q = AutoQuality.handle(MainActivity.this, r, saver);
+                    if (q != null) {
+                        final String info = AutoQuality.lastInfo;
+                        if (!info.equals(before) && !info.isEmpty()) ui.post(new Runnable() { public void run() { toast("Auto quality: " + info); } });
+                        ui.post(new Runnable() { public void run() { addMedia(t, u); } });
+                        return q;
+                    }
+                }
                 if (MEDIA.matcher(u).matches() && !u.contains("googlevideo.com")) {
                     ui.post(new Runnable() { public void run() { addMedia(t, u); } });
                 }

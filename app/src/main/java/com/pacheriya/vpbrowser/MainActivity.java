@@ -142,6 +142,8 @@ public class MainActivity extends Activity {
         @Override public void onAccuracyChanged(Sensor s, int a) { }
     };
     private boolean playing = false, inPip = false, desktop = false, adblock = true, scripts = true;
+    private String readerJs = "";
+    private String autoTr = "";
     private String injected = "", defaultUa = "", desktopUa = "";
     private static final java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.ConcurrentHashMap<String, Integer>> ORIGINS = new java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.ConcurrentHashMap<String, Integer>>();
     private static String hostOf(String u) { try { return Uri.parse(u).getHost(); } catch (Exception e) { return null; } }
@@ -216,6 +218,8 @@ public class MainActivity extends Activity {
            copy was hiding the app's newer Auto picture) */
         if (vp == null || vp.length() < 10000 || scriptVer(vp) < scriptVer(vpa)) vp = vpa;
         String css = "(function(){var c=" + jq(asset("vp-cosmetic.css")) + ";function a(){var p=document.head||document.documentElement;if(!p){setTimeout(a,15);return}var s=document.createElement('style');s.textContent=c;p.appendChild(s)}a()})();";
+        readerJs = asset("reader.js");
+        autoTr = sp.getString("autotr", "");
         injected = asset("vp-core.js") + "\n" + css + "\n" + vp;
 
         String ua = WebSettings.getDefaultUserAgent(this);
@@ -588,6 +592,7 @@ public class MainActivity extends Activity {
                 t.title = (ti == null || ti.isEmpty()) ? u : ti;
                 t.fallback = null;
                 if (!t.incognito && u.startsWith("http")) Store.addHistory(sp, t.title, u);
+                if (!autoTr.isEmpty() && u.startsWith("http")) v.evaluateJavascript(readerJs + ";window.__vpReader.page('" + autoTr + "')", null);
             }
         });
 
@@ -946,6 +951,40 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface public String pre(String host) { return topOrigins(host); }
+        @JavascriptInterface public void toast(final String s) { ui.post(new Runnable() { public void run() { MainActivity.this.toast(s); } }); }
+        @JavascriptInterface public void trAsync(final int id, final String text, final String tl) {
+            new Thread(new Runnable() {
+                public void run() {
+                    String res = "";
+                    try {
+                        java.net.HttpURLConnection h = (java.net.HttpURLConnection) new java.net.URL("https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&dt=t&tl=" + Uri.encode(tl)).openConnection();
+                        h.setRequestMethod("POST");
+                        h.setDoOutput(true);
+                        h.setConnectTimeout(10000);
+                        h.setReadTimeout(20000);
+                        h.setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8");
+                        h.setRequestProperty("User-Agent", "Mozilla/5.0");
+                        java.io.OutputStream os = h.getOutputStream();
+                        os.write(("q=" + java.net.URLEncoder.encode(text, "UTF-8")).getBytes("UTF-8"));
+                        os.close();
+                        if (h.getResponseCode() == 200) {
+                            java.io.InputStream in = h.getInputStream();
+                            java.io.ByteArrayOutputStream bo = new java.io.ByteArrayOutputStream();
+                            byte[] b = new byte[8192];
+                            int n;
+                            while ((n = in.read(b)) > 0) bo.write(b, 0, n);
+                            in.close();
+                            org.json.JSONArray segs = new org.json.JSONArray(bo.toString("UTF-8")).getJSONArray(0);
+                            StringBuilder sb = new StringBuilder();
+                            for (int i = 0; i < segs.length(); i++) sb.append(segs.getJSONArray(i).optString(0, ""));
+                            res = sb.toString();
+                        }
+                    } catch (Exception e) { res = ""; }
+                    final String r = res;
+                    ui.post(new Runnable() { public void run() { try { t.wv.evaluateJavascript("window.__vpTr&&window.__vpTr(" + id + "," + org.json.JSONObject.quote(r) + ")", null); } catch (Exception e) { /* ignore */ } } });
+                }
+            }).start();
+        }
         @JavascriptInterface public void playing(boolean p) { if (p) lastPlayTs = SystemClock.uptimeMillis(); }
     }
 
@@ -1182,9 +1221,9 @@ public class MainActivity extends Activity {
 
     private void showMenu(View anchor) {
         boolean bm = cur != null && Store.isBookmarked(sp, cur.url);
-        final int[] ids = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18};
+        final int[] ids = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20};
         final String[] labels = {"New tab", "Private tab", "Reload", "Forward", "Find in page", bm ? "Unbookmark" : "Bookmark",
-            "Bookmarks", "History", "Float video", "Video Plus", "Translate", "Downloads", "Copy link", "Share", "Settings", "Update", "Exit", saver ? "Saver: ON" : "Data saver"};
+            "Bookmarks", "History", "Float video", "Video Plus", "Translate", "Downloads", "Copy link", "Share", "Settings", "Update", "Exit", saver ? "Saver: ON" : "Data saver", "Reading mode", autoTr.isEmpty() ? "Auto-translate: off" : "Auto: " + autoTr.toUpperCase()};
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
         GradientDrawable bg = new GradientDrawable();
@@ -1245,6 +1284,15 @@ public class MainActivity extends Activity {
             case 15: showSettings(); break;
             case 16: Updater.check(MainActivity.this, true); break;
             case 17: finishAndRemoveTask(); break;
+            case 19:
+                if (cur.url.startsWith("http")) cur.wv.evaluateJavascript(readerJs + ";window.__vpReader.auto='" + autoTr + "';window.__vpReader.toggle()", null);
+                break;
+            case 20:
+                autoTr = autoTr.isEmpty() ? "en" : (autoTr.equals("en") ? "hi" : "");
+                sp.edit().putString("autotr", autoTr).apply();
+                toast(autoTr.isEmpty() ? "Auto-translate off" : "Pages will auto-translate to " + (autoTr.equals("en") ? "English" : "Hindi") + " (pages already in that language are skipped)");
+                if (!autoTr.isEmpty() && cur.url.startsWith("http")) cur.wv.evaluateJavascript(readerJs + ";window.__vpReader.page('" + autoTr + "')", null);
+                break;
             case 18:
                 saver = !saver;
                 sp.edit().putBoolean("saver", saver).apply();

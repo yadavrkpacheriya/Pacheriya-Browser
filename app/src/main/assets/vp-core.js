@@ -61,14 +61,7 @@
   /* 5. remove common page restrictions: forced no-zoom, blocked copy / select */
   try {
     ['copy', 'contextmenu', 'selectstart'].forEach(function (e) { document.addEventListener(e, function (ev) { ev.stopImmediatePropagation(); }, true); });
-    var fixVp = function () {
-      var m = document.querySelector('meta[name=viewport]');
-      if (m && /user-scalable\s*=\s*(no|0)|maximum-scale\s*=\s*(1(\.0+)?|0\.\d+)\s*(,|$)/i.test(m.content)) {
-        m.setAttribute('content', m.content.replace(/,?\s*(user-scalable|maximum-scale|minimum-scale)\s*=\s*[^,]*/gi, '').replace(/^,/, '') + ',user-scalable=yes,maximum-scale=10');
-      }
-    };
-    document.addEventListener('DOMContentLoaded', fixVp);
-    new MutationObserver(fixVp).observe(document, { childList: true, subtree: true });
+    /* page zoom is left exactly as each site sets it: forcing zoom on made pages shrink or overflow */
   } catch (e) {}
   /* 4. YouTube: strip ad data and skip whatever still shows (best effort - YouTube changes often) */
   if (/(^|\.)youtube\.com$/.test(location.hostname)) {

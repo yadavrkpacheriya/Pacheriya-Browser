@@ -2,22 +2,15 @@ package com.pacheriya.vpbrowser;
 
 import android.app.Activity;
 import android.app.AlertDialog;
-import android.app.PendingIntent;
+import android.app.DownloadManager;
 import android.content.Context;
 import android.content.DialogInterface;
-import android.content.Intent;
 import android.content.SharedPreferences;
-import android.content.pm.PackageInstaller;
 import android.net.Uri;
-import android.os.Build;
-import android.provider.Settings;
+import android.os.Environment;
 import android.widget.Toast;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.regex.Matcher;
@@ -79,64 +72,26 @@ final class Updater {
         a.runOnUiThread(new Runnable() { public void run() { Toast.makeText(a, s, Toast.LENGTH_LONG).show(); } });
     }
 
-    private static void prompt(final Activity a, final String url, int build) {
+    private static void prompt(final Activity a, final String url, final int build) {
         new AlertDialog.Builder(a).setTitle("Update available")
             .setMessage("A new version of Video Plus Browser (build " + build + ") is ready. Update now?")
             .setPositiveButton("Update", new DialogInterface.OnClickListener() {
-                public void onClick(DialogInterface d, int w) { start(a, url); }
+                public void onClick(DialogInterface d, int w) { start(a, url, build); }
             })
             .setNegativeButton("Later", null).show();
     }
 
-    private static void start(final Activity a, final String url) {
-        if (!a.getPackageManager().canRequestPackageInstalls()) {
-            Toast.makeText(a, "Allow \"Install unknown apps\" for this browser, then tap Update again", Toast.LENGTH_LONG).show();
-            Intent i = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + a.getPackageName()));
-            a.startActivity(i);
-            return;
+    private static void start(final Activity a, final String url, int build) {
+        try {
+            DownloadManager.Request r = new DownloadManager.Request(Uri.parse(url));
+            r.setTitle("Video Plus Browser update - tap to install");
+            r.setMimeType("application/vnd.android.package-archive");
+            r.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+            r.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "VideoPlusBrowser-build" + build + ".apk");
+            ((DownloadManager) a.getSystemService(Context.DOWNLOAD_SERVICE)).enqueue(r);
+            Toast.makeText(a, "Downloading the update. When it finishes, tap the notification to install.", Toast.LENGTH_LONG).show();
+        } catch (Exception e) {
+            toast(a, "Update failed: " + e.getMessage());
         }
-        Toast.makeText(a, "Downloading update...", Toast.LENGTH_LONG).show();
-        new Thread(new Runnable() {
-            public void run() {
-                try {
-                    File f = new File(a.getCacheDir(), "update.apk");
-                    HttpURLConnection h = (HttpURLConnection) new URL(url).openConnection();
-                    h.setConnectTimeout(15000);
-                    h.setReadTimeout(30000);
-                    h.setInstanceFollowRedirects(true);
-                    h.setRequestProperty("User-Agent", "VideoPlusBrowser");
-                    if (h.getResponseCode() != 200) throw new Exception("HTTP " + h.getResponseCode());
-                    InputStream in = h.getInputStream();
-                    FileOutputStream fo = new FileOutputStream(f);
-                    byte[] b = new byte[32768];
-                    int n;
-                    while ((n = in.read(b)) > 0) fo.write(b, 0, n);
-                    fo.close();
-                    in.close();
-                    if (f.length() < 100000) throw new Exception("download incomplete");
-                    install(a, f);
-                } catch (Exception e) {
-                    toast(a, "Update failed: " + e.getMessage());
-                }
-            }
-        }).start();
-    }
-
-    private static void install(Context c, File f) throws Exception {
-        PackageInstaller pi = c.getPackageManager().getPackageInstaller();
-        PackageInstaller.SessionParams sp = new PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL);
-        if (Build.VERSION.SDK_INT >= 31) sp.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED);
-        int id = pi.createSession(sp);
-        PackageInstaller.Session s = pi.openSession(id);
-        OutputStream os = s.openWrite("update.apk", 0, f.length());
-        FileInputStream fi = new FileInputStream(f);
-        byte[] b = new byte[32768];
-        int n;
-        while ((n = fi.read(b)) > 0) os.write(b, 0, n);
-        fi.close();
-        s.fsync(os);
-        os.close();
-        PendingIntent pend = PendingIntent.getBroadcast(c, id, new Intent(c, UpdateReceiver.class), PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_MUTABLE);
-        s.commit(pend.getIntentSender());
     }
 }

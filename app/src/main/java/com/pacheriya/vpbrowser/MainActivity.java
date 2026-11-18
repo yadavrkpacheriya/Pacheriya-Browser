@@ -88,14 +88,24 @@ public class MainActivity extends Activity {
         ScriptHandler sh;
         boolean incognito;
         String fallback;
+        final ArrayList<Entry> entries = new ArrayList<Entry>();
+        final java.util.HashSet<String> covered = new java.util.HashSet<String>();
+        int gen, pending;
+        boolean panelOpen, autoShown;
     }
+
+    static class Opt { String label; String url; boolean hls; String tag = "video"; }
+    static class Entry { String url; boolean hidden; List<Opt> opts; }
 
     private final ArrayList<Tab> tabs = new ArrayList<Tab>();
     private Tab cur;
     private FrameLayout root, content, fsHost;
     private LinearLayout main, bar;
     private EditText urlBox;
-    private TextView tabBtn, dlBtn;
+    private TextView tabBtn, dlHead;
+    private LinearLayout dlPanel, dlList;
+    private android.widget.ScrollView dlScroll;
+    private final java.util.concurrent.ExecutorService resolver = java.util.concurrent.Executors.newFixedThreadPool(3);
     private ProgressBar pb;
     private View customView;
     private WebChromeClient.CustomViewCallback customCb;
@@ -316,30 +326,35 @@ public class MainActivity extends Activity {
         pb.setMax(100);
         pb.setVisibility(View.INVISIBLE);
 
+        dlPanel = new LinearLayout(this);
+        dlPanel.setOrientation(LinearLayout.VERTICAL);
+        dlPanel.setBackgroundColor(0xFF1B1B22);
+        dlPanel.setVisibility(View.GONE);
+        dlHead = new TextView(this);
+        dlHead.setTextColor(0xFFB9A8FF);
+        dlHead.setTextSize(14);
+        dlHead.setTypeface(null, android.graphics.Typeface.BOLD);
+        dlHead.setPadding(dp(16), dp(9), dp(16), dp(9));
+        dlHead.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) { if (cur != null) { cur.panelOpen = !cur.panelOpen; rebuildPanel(); } }
+        });
+        dlList = new LinearLayout(this);
+        dlList.setOrientation(LinearLayout.VERTICAL);
+        dlScroll = new android.widget.ScrollView(this) {
+            @Override protected void onMeasure(int w, int h) { super.onMeasure(w, View.MeasureSpec.makeMeasureSpec(dp(230), View.MeasureSpec.AT_MOST)); }
+        };
+        dlScroll.addView(dlList);
+        dlPanel.addView(dlHead, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        dlPanel.addView(dlScroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
         content = new FrameLayout(this);
         main.addView(bar, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         main.addView(findBar, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        main.addView(dlPanel, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         main.addView(pb, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(3)));
         main.addView(content, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
         root.addView(main, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
-        dlBtn = new TextView(this);
-        dlBtn.setTextColor(Color.WHITE);
-        dlBtn.setTextSize(15);
-        dlBtn.setGravity(Gravity.CENTER);
-        dlBtn.setPadding(dp(16), dp(10), dp(16), dp(10));
-        GradientDrawable pill = new GradientDrawable();
-        pill.setColor(0xFF6C4DFF);
-        pill.setCornerRadius(dp(24));
-        dlBtn.setBackground(pill);
-        dlBtn.setVisibility(View.GONE);
-        dlBtn.setOnClickListener(new View.OnClickListener() {
-            public void onClick(View v) { showMediaList(); }
-        });
-        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.gravity = Gravity.BOTTOM | Gravity.END;
-        lp.setMargins(0, 0, dp(16), dp(90));
-        root.addView(dlBtn, lp);
 
         fsHost = new FrameLayout(this);
         fsHost.setBackgroundColor(Color.BLACK);
@@ -485,6 +500,7 @@ public class MainActivity extends Activity {
             @Override public void onPageStarted(WebView v, String u, Bitmap f) {
                 t.url = u;
                 t.media.clear();
+                t.entries.clear(); t.covered.clear(); t.gen++; t.pending = 0; t.panelOpen = false; t.autoShown = false;
                 if (t == cur) {
                     urlBox.setText(u.startsWith("file:") ? "" : u);
                     refreshBadge();
@@ -878,17 +894,129 @@ public class MainActivity extends Activity {
         @JavascriptInterface public void playing(boolean p) { if (p) lastPlayTs = SystemClock.uptimeMillis(); }
     }
 
-    private void addMedia(Tab t, String u) {
+    private void addMedia(final Tab t, final String u) {
         if (u.startsWith("blob:") || t.media.contains(u)) return;
         t.media.add(u);
         if (t.media.size() > 40) t.media.remove(0);
-        if (t == cur) refreshBadge();
+        final Entry en = new Entry();
+        en.url = u;
+        t.entries.add(en);
+        t.pending++;
+        final int g = t.gen;
+        final String ua = t.wv.getSettings().getUserAgentString();
+        final String ref = t.url;
+        if (t == cur) rebuildPanel();
+        resolver.execute(new Runnable() {
+            public void run() {
+                final List<Opt> opts = new ArrayList<Opt>();
+                final List<String> vurls = new ArrayList<String>();
+                boolean master = false;
+                String low = u.toLowerCase();
+                try {
+                    if (low.contains(".m3u8")) {
+                        List<Downloader.Variant> vs = Downloader.variants(u, ua, ref);
+                        master = vs.size() > 1;
+                        for (int i = 0; i < vs.size() && i < 8; i++) {
+                            Downloader.Variant v = vs.get(i);
+                            v.dur = Downloader.duration(v.url, ua, ref);
+                            Opt o = new Opt();
+                            o.hls = true; o.url = v.url; o.tag = v.q;
+                            String sz = (v.bw > 0 && v.dur > 0) ? "  \u2022  ~" + mb((long) (v.bw / 8.0 * v.dur)) : "";
+                            String br = v.bw > 0 ? "  \u2022  " + String.format(java.util.Locale.US, "%.1f", v.bw / 1000000.0) + " Mbps" : "";
+                            o.label = ("Original".equals(v.q) ? "Video (best available)" : v.q) + br + sz + "  \u2022  stream";
+                            opts.add(o);
+                            if (master) vurls.add(v.url);
+                        }
+                    } else if (low.contains(".mpd")) {
+                        // DASH not supported for saving yet: show nothing
+                    } else {
+                        long sz = Downloader.size(u, ua, ref);
+                        if (sz < 0 || sz >= 300 * 1024) {
+                            Opt o = new Opt();
+                            o.url = u;
+                            java.util.regex.Matcher m = Pattern.compile("(?i)(\\d{3,4})p").matcher(u);
+                            String q = m.find() ? m.group(1) + "p" : "video";
+                            o.tag = q;
+                            String ext = "FILE";
+                            java.util.regex.Matcher m2 = Pattern.compile("(?i)\\.([a-z0-9]{2,4})(\\?|#|$)").matcher(Uri.parse(u).getPath() == null ? "" : Uri.parse(u).getPath());
+                            if (m2.find()) ext = m2.group(1).toUpperCase();
+                            o.label = ext + ("video".equals(q) ? "" : "  \u2022  " + q) + (sz > 0 ? "  \u2022  " + mb(sz) : "");
+                            opts.add(o);
+                        }
+                    }
+                } catch (Exception ex) {
+                    Opt o = new Opt();
+                    o.url = u; o.hls = low.contains(".m3u8");
+                    o.label = "Video (could not read qualities)";
+                    opts.add(o);
+                }
+                final boolean fm = master;
+                ui.post(new Runnable() { public void run() { applyResolved(t, g, en, opts, fm ? vurls : null); } });
+            }
+        });
     }
 
-    private void refreshBadge() {
-        int n = cur == null ? 0 : cur.media.size();
-        dlBtn.setText("\u2B07  " + n);
-        dlBtn.setVisibility(n > 0 && !inPip && customView == null ? View.VISIBLE : View.GONE);
+    private static String mb(long b) {
+        if (b >= 1048576L * 1024) return String.format(java.util.Locale.US, "%.1f GB", b / 1073741824.0);
+        return String.format(java.util.Locale.US, "%d MB", Math.max(1, b / 1048576L));
+    }
+
+    private void applyResolved(Tab t, int g, Entry e, List<Opt> opts, List<String> variantUrls) {
+        if (t.gen != g) return;
+        if (t.pending > 0) t.pending--;
+        e.opts = opts;
+        if (variantUrls != null) {
+            t.covered.addAll(variantUrls);
+            for (Entry x : t.entries) if (x != e && t.covered.contains(x.url)) x.hidden = true;
+        } else if (t.covered.contains(e.url)) e.hidden = true;
+        if (!t.autoShown && visibleOpts(t) > 0) { t.autoShown = true; t.panelOpen = true; }
+        if (t == cur) rebuildPanel();
+    }
+
+    private int visibleOpts(Tab t) {
+        int n = 0;
+        for (Entry e : t.entries) if (!e.hidden && e.opts != null) n += e.opts.size();
+        return n;
+    }
+
+    private void refreshBadge() { rebuildPanel(); }
+
+    private void rebuildPanel() {
+        if (dlPanel == null) return;
+        final Tab t = cur;
+        if (t == null || inPip || customView != null) { dlPanel.setVisibility(View.GONE); return; }
+        int n = visibleOpts(t);
+        if (n == 0 && t.pending == 0) { dlPanel.setVisibility(View.GONE); return; }
+        dlPanel.setVisibility(View.VISIBLE);
+        dlHead.setText(n == 0 ? "\u2B07  Finding video qualities..." : "\u2B07  " + n + " download option" + (n > 1 ? "s" : "") + "   " + (t.panelOpen ? "\u25B2" : "\u25BC"));
+        dlList.removeAllViews();
+        dlScroll.setVisibility(t.panelOpen && n > 0 ? View.VISIBLE : View.GONE);
+        if (!t.panelOpen) return;
+        for (Entry e : t.entries) {
+            if (e.hidden || e.opts == null) continue;
+            for (final Opt o : e.opts) {
+                TextView r = new TextView(this);
+                r.setText(o.label);
+                r.setTextColor(Color.WHITE);
+                r.setTextSize(15);
+                r.setPadding(dp(20), dp(13), dp(16), dp(13));
+                r.setBackgroundColor(0xFF24242B);
+                r.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { startOpt(t, o); } });
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                lp.topMargin = 1;
+                dlList.addView(r, lp);
+            }
+        }
+    }
+
+    private void startOpt(Tab t, Opt o) {
+        String ua = t.wv.getSettings().getUserAgentString();
+        String nm = safeName(t.title) + "_" + o.tag;
+        if (o.hls) Downloader.hls(getApplicationContext(), o.url, ua, t.url, nm);
+        else Downloader.direct(this, o.url, ua, t.url, null);
+        t.panelOpen = false;
+        rebuildPanel();
+        toast("Download started - see notification");
     }
 
     private void setPlaying(boolean p) {

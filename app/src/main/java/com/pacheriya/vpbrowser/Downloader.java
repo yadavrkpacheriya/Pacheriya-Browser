@@ -31,7 +31,7 @@ import javax.crypto.spec.SecretKeySpec;
 
 /** Saves videos the page already plays: direct files (system download manager) and plain HLS streams. */
 final class Downloader {
-    static class Variant { String label; String url; int bw; }
+    static class Variant { String label; String url; int bw; String q = "Original"; double dur; }
 
     private static final Handler UI = new Handler(Looper.getMainLooper());
     private static int nid = 100;
@@ -105,6 +105,33 @@ final class Downloader {
         return new String(getBytes(u, ua, ref), "UTF-8");
     }
 
+    static double duration(String u, String ua, String ref) {
+        try {
+            String txt = getText(u, ua, ref);
+            Matcher m = Pattern.compile("#EXTINF:([0-9.]+)").matcher(txt);
+            double s = 0;
+            while (m.find()) s += Double.parseDouble(m.group(1));
+            return s;
+        } catch (Exception e) { return 0; }
+    }
+
+    static long size(String u, String ua, String ref) {
+        try {
+            HttpURLConnection h = open(u, ua, ref);
+            h.setConnectTimeout(8000);
+            h.setReadTimeout(8000);
+            h.setRequestProperty("Range", "bytes=0-0");
+            int code = h.getResponseCode();
+            long total = -1;
+            String cr = h.getHeaderField("Content-Range");
+            if (cr != null && cr.indexOf('/') > 0) { try { total = Long.parseLong(cr.substring(cr.indexOf('/') + 1).trim()); } catch (Exception e) { /* unknown */ } }
+            if (total < 0 && code == 200) total = h.getContentLengthLong();
+            try { h.getInputStream().close(); } catch (Exception e) { /* ignore */ }
+            h.disconnect();
+            return total;
+        } catch (Exception e) { return -1; }
+    }
+
     private static String resolve(String base, String rel) {
         try { return new URL(new URL(base), rel).toString(); } catch (Exception e) { return rel; }
     }
@@ -138,6 +165,7 @@ final class Downloader {
             v.bw = bw;
             v.url = resolve(master, lines[j].trim());
             String q = (res != null && res.indexOf('x') > 0) ? res.substring(res.indexOf('x') + 1) + "p" : "stream";
+            v.q = q;
             v.label = q + "  (" + (bw / 1000) + " kbps)";
             out.add(v);
         }

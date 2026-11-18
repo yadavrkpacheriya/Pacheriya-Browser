@@ -152,6 +152,34 @@ public class MainActivity extends Activity {
         bar.setVisibility(b ? View.GONE : View.VISIBLE);
         navBar.setVisibility(b ? View.GONE : View.VISIBLE);
         if (customView == null) hideBars(b);
+        if (b) { barsHidden = false; ui.removeCallbacks(hideChromeR); if (handle != null) handle.setVisibility(View.GONE); }
+        refreshBadge();
+        if (!b) showChrome();
+    }
+
+    /* the address bar and the bottom buttons slide away after 3 seconds; scrolling up or the small arrow brings them back */
+    private boolean barsHidden = false;
+    private TextView handle;
+    private final Runnable hideChromeR = new Runnable() { public void run() { hideChrome(); } };
+
+    private void showChrome() {
+        if (immersive || inPip || customView != null) return;
+        barsHidden = false;
+        bar.setVisibility(View.VISIBLE);
+        navBar.setVisibility(View.VISIBLE);
+        if (handle != null) handle.setVisibility(View.GONE);
+        refreshBadge();
+        ui.removeCallbacks(hideChromeR);
+        ui.postDelayed(hideChromeR, 3000);
+    }
+
+    private void hideChrome() {
+        if (barsHidden || immersive || inPip || customView != null || cur == null) return;
+        if (urlBox.hasFocus() || cur.url == null || !cur.url.startsWith("http")) { ui.removeCallbacks(hideChromeR); ui.postDelayed(hideChromeR, 3000); return; }
+        barsHidden = true;
+        bar.setVisibility(View.GONE);
+        navBar.setVisibility(View.GONE);
+        if (handle != null) handle.setVisibility(View.VISIBLE);
         refreshBadge();
     }
     private WebView subWv;
@@ -485,7 +513,22 @@ public class MainActivity extends Activity {
         fsHost = new FrameLayout(this);
         fsHost.setBackgroundColor(Color.BLACK);
         fsHost.setVisibility(View.GONE);
+        handle = new TextView(this);
+        handle.setText("\u2303");
+        handle.setTextColor(0xFFFFFFFF);
+        handle.setTextSize(16);
+        handle.setGravity(Gravity.CENTER);
+        GradientDrawable hb = new GradientDrawable();
+        hb.setColor(0x99000000);
+        hb.setCornerRadius(dp(14));
+        handle.setBackground(hb);
+        handle.setVisibility(View.GONE);
+        handle.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { showChrome(); } });
+        FrameLayout.LayoutParams hlp = new FrameLayout.LayoutParams(dp(54), dp(26), Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        hlp.bottomMargin = dp(12);
+        root.addView(handle, hlp);
         root.addView(fsHost, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        ui.postDelayed(hideChromeR, 3000);
     }
 
     private TextView iconBtn(String t) {
@@ -563,6 +606,12 @@ public class MainActivity extends Activity {
     // ---------------- WebView ----------------
     private WebView makeWebView(final Tab t) {
         WebView w = new WebView(this);
+        w.setOnScrollChangeListener(new View.OnScrollChangeListener() {
+            public void onScrollChange(View v, int x, int y, int ox, int oy) {
+                if (barsHidden && oy - y > dp(14)) showChrome();
+                else if (!barsHidden && y - oy > dp(6)) { ui.removeCallbacks(hideChromeR); ui.postDelayed(hideChromeR, 600); }
+            }
+        });
         if (t.incognito && WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE)) {
             try { WebViewCompat.setProfile(w, "incognito"); } catch (Throwable e) { /* shared storage */ }
         }
@@ -636,6 +685,7 @@ public class MainActivity extends Activity {
             @Override public void onPageStarted(WebView v, String u, Bitmap f) {
                 t.url = u;
                 if (t == cur && immersive) setReadMode(false);
+                else if (t == cur) showChrome();
                 t.media.clear();
                 t.entries.clear(); t.covered.clear(); t.gen++; t.pending = 0; t.panelOpen = false; t.autoShown = false;
                 if (t == cur) {
@@ -1245,7 +1295,7 @@ public class MainActivity extends Activity {
     private void rebuildPanel() {
         if (dlPanel == null) return;
         final Tab t = cur;
-        if (t == null || inPip || immersive || customView != null) { dlPanel.setVisibility(View.GONE); dlIcon.setVisibility(View.GONE); return; }
+        if (t == null || inPip || immersive || barsHidden || customView != null) { dlPanel.setVisibility(View.GONE); dlIcon.setVisibility(View.GONE); return; }
         int n = visibleOpts(t);
         dlIcon.setVisibility(n > 0 ? View.VISIBLE : View.GONE);
         dlBadge.setText(String.valueOf(n));
@@ -1529,6 +1579,7 @@ public class MainActivity extends Activity {
         navBar.setVisibility(in || immersive ? View.GONE : View.VISIBLE);
         pb.setVisibility(View.GONE);
         refreshBadge();
+        if (!in && !immersive) showChrome();
         if (cur != null && customView == null) cur.wv.evaluateJavascript("window.__vpPip&&window.__vpPip(" + in + ")", null);
         if (!in && cur != null && lastScale > 0f) {
             final Tab ct = cur;

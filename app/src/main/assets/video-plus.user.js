@@ -71,7 +71,7 @@
     '#vp-panel button.on{background:#d9b45a;color:#1a1405}' +
     '#vp-panel label{display:flex;align-items:center;gap:8px;margin:8px 0;font-size:13px;color:#cfd3df}#vp-panel label span{width:78px}' +
     '#vp-panel input[type=range]{flex:1;accent-color:#d9b45a}' +
-    '#vp-bar{position:fixed;display:none;align-items:center;gap:8px;background:#000c;color:#fff;padding:4px 10px;border-radius:12px;font-size:13px;box-sizing:border-box;z-index:2147483647;touch-action:none}#vp-bar input{flex:1;min-width:0;height:30px;accent-color:#d9b45a}#vp-bar b{font-size:20px;padding:2px 6px}' +
+    '#vp-bar{position:fixed;display:none;align-items:center;gap:8px;background:#000c;color:#fff;padding:4px 10px;border-radius:12px;font-size:13px;box-sizing:border-box;z-index:2147483647;touch-action:none}#vp-bar input{flex:1;min-width:0;height:30px;accent-color:#d9b45a}#vp-bar b{font-size:20px;padding:2px 6px}#vp-bar.vp-s{padding:0 8px;gap:5px;font-size:11px;border-radius:8px}#vp-bar.vp-s input{height:18px}#vp-bar.vp-s b{font-size:13px;padding:0 3px}' +
     '#vp-cap{position:fixed;left:50%;bottom:14%;transform:translateX(-50%);max-width:90vw;text-align:center;background:#000b;color:#fff;padding:6px 12px;border-radius:8px;font-size:17px;line-height:1.3;display:none;pointer-events:none;z-index:2147483647}' +
     '#vp-hud{position:fixed;left:50%;top:22%;transform:translateX(-50%);background:#000a;color:#fff;padding:9px 16px;border-radius:12px;font-size:18px;display:none;z-index:2147483647}</style>' +
     '<button id="vp-fab" title="Video Plus">\uD83C\uDFAC</button>' +
@@ -639,8 +639,16 @@
     barD.textContent = isFinite(v.duration) ? '-' + fmt(v.duration - v.currentTime) : 'LIVE';
     if (!barDrag && isFinite(v.duration) && v.duration > 0) barR.value = Math.round(v.currentTime / v.duration * 1000);
   }
+  function isPrev(v) { return !!(v.loop || v.__vpNoCore || (v.muted && v.autoplay) || (isFinite(v.duration) && v.duration < 90)); }
   function barPlace(v) {
-    var st = barEl.style;
+    var st = barEl.style, sm = isPrev(v) && !document.fullscreenElement && !rot;
+    barEl.classList.toggle('vp-s', sm);
+    if (sm) {
+      var q = v.getBoundingClientRect(), qw = Math.max(150, q.width - 16), ql = Math.max(0, Math.min(q.left + 8, innerWidth - qw));
+      st.left = ql + 'px'; st.right = 'auto'; st.width = qw + 'px'; st.bottom = 'auto'; st.height = '28px'; st.top = Math.min(innerHeight - 32, Math.max(0, q.bottom - 34)) + 'px';
+      return;
+    }
+    st.height = '';
     if (document.fullscreenElement || rot) { st.left = '8px'; st.right = '8px'; st.width = 'auto'; st.top = 'auto'; st.bottom = '14px'; }
     else {
       var r = v.getBoundingClientRect(), w = Math.max(220, Math.min(r.width, innerWidth)), l = Math.max(0, Math.min(r.left, innerWidth - w));
@@ -652,6 +660,12 @@
     if (!v) return; barV = v; barPlace(v); barEl.style.display = 'flex'; barUpdate();
     clearTimeout(barT); barT = setTimeout(function () { if (!barDrag) barEl.style.display = 'none'; }, ms || 4500);
   }
+  setInterval(function () {
+    if (barEl.style.display !== 'flex' || !barV) return;
+    var r = barV.getBoundingClientRect();
+    if (r.bottom < 40 || r.top > innerHeight - 40) { if (!barDrag) barEl.style.display = 'none'; return; }
+    barPlace(barV);
+  }, 120);
   barR.addEventListener('input', function () { barDrag = true; var v = barV; if (v && isFinite(v.duration)) { v.currentTime = barR.value / 1000 * v.duration; barUpdate(); } showBar(v, 6000); });
   barR.addEventListener('change', function () { barDrag = false; });
   $('#vp-bpp').onclick = function () { var v = barV; if (v) { v.paused ? v.play() : v.pause(); showBar(v); } };
@@ -662,7 +676,7 @@
     if (!t || Math.abs(t.clientX - k.x) > 12 || Math.abs(t.clientY - k.y) > 12 || Date.now() - k.t > 500) return;
     var h = hit(t); if (h) showBar(h.v);
   }, { passive: true, capture: true });
-  document.addEventListener('play', function (e) { if (e.target instanceof HTMLVideoElement && e.target.getBoundingClientRect().width > 200) showBar(e.target, 3000); }, true);
+  document.addEventListener('play', function (e) { if (e.target instanceof HTMLVideoElement && !isPrev(e.target) && e.target.getBoundingClientRect().width > 200) showBar(e.target, 3000); }, true);
   document.addEventListener('fullscreenchange', function () { var v = barV || target(); if (v) setTimeout(function () { showBar(v, 3500); }, 500); });
 
   /* ---------- gestures (work even if the site covers the video with its own layers) ---------- */

@@ -656,6 +656,7 @@ public class MainActivity extends Activity {
                 t.title = (ti == null || ti.isEmpty()) ? u : ti;
                 t.fallback = null;
                 if (!t.incognito && u.startsWith("http")) Store.addHistory(sp, t.title, u);
+                if (u.startsWith("http")) ui.postDelayed(new Runnable() { public void run() { if (t == cur) fitZoom(t, 0); } }, 900);
                 if (!autoTr.isEmpty() && u.startsWith("http")) v.evaluateJavascript(readerJs + ";window.__vpReader.page('" + autoTr + "')", null);
             }
         });
@@ -1453,6 +1454,24 @@ public class MainActivity extends Activity {
         if (playing && !isInPictureInPictureMode()) enterPip();
     }
 
+    private void fitZoom(final Tab ct, final int tries) {
+        if (desktop || ct == null) return;
+        try {
+            ct.wv.evaluateJavascript("window.innerWidth", new android.webkit.ValueCallback<String>() {
+                public void onReceiveValue(String sv) {
+                    try {
+                        float iw = Float.parseFloat(sv.replace("\"", ""));
+                        float vw = ct.wv.getWidth() / getResources().getDisplayMetrics().density;
+                        if (vw > 100 && iw > 100 && iw < vw * 0.93f) {
+                            ct.wv.zoomBy(Math.max(0.3f, iw / vw));
+                            if (tries < 2) ui.postDelayed(new Runnable() { public void run() { fitZoom(ct, tries + 1); } }, 500);
+                        }
+                    } catch (Throwable e) { /* ignore */ }
+                }
+            });
+        } catch (Throwable e) { /* ignore */ }
+    }
+
     private void fixZoom(final Tab ct, final float want, final int n) {
         try {
             float now = ct.wv.getScale();
@@ -1474,7 +1493,7 @@ public class MainActivity extends Activity {
         if (!in && cur != null && lastScale > 0f) {
             final Tab ct = cur;
             final float want = lastScale;
-            ui.postDelayed(new Runnable() { public void run() { fixZoom(ct, want, 0); } }, 450);
+            ui.postDelayed(new Runnable() { public void run() { fixZoom(ct, want, 0); fitZoom(ct, 0); } }, 450);
         }
     }
 

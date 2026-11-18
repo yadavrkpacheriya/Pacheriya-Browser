@@ -166,6 +166,23 @@
       for (var i = 0; i < fr.length; i++) if (fr[i].contentWindow === e.source) { pipFor(fr[i]); try { if (window.parent !== window) window.parent.postMessage({ __vpPipUp: 1 }, '*'); } catch (x) {} break; }
     }
   });
+  /* 3b. in-player video ads: skip them the moment they appear ("Visit advertiser" / "Skip" overlays) */
+  setInterval(function () {
+    try {
+      var els = document.querySelectorAll('div,span,a,button'), hit = null;
+      for (var i = 0; i < els.length && !hit; i++) {
+        var e = els[i]; if (e.children.length > 2) continue;
+        var tx = (e.textContent || '').trim();
+        if (tx.length > 22 || tx.length < 4) continue;
+        if (/^skip( ad| ads)?( ?[\u203a>\u00bb])?$/i.test(tx) || /^(close ad|skip intro)$/i.test(tx)) { var r0 = e.getBoundingClientRect(); if (r0.width > 0 && r0.height > 0) { try { e.click(); } catch (x) {} } }
+        else if (/^(visit advertiser|visit site|ad \d+ of \d+|advertisement)$/i.test(tx)) hit = e;
+      }
+      if (!hit) return;
+      var p = hit, vid = null;
+      for (var k = 0; k < 7 && p && !vid; k++) { p = p.parentElement; if (p) { var vs = p.getElementsByTagName('video'); for (var j = 0; j < vs.length; j++) { var v = vs[j]; if (isFinite(v.duration) && v.duration > 0 && v.duration < 130) { vid = v; break; } } } }
+      if (vid) { vid.muted = true; try { vid.playbackRate = 16; } catch (x) {} if (vid.duration - vid.currentTime > 0.3) { try { vid.currentTime = vid.duration - 0.1; } catch (x) {} } }
+    } catch (e) {}
+  }, 400);
   /* 5. remove common page restrictions: forced no-zoom, blocked copy / select */
   try {
     ['copy', 'contextmenu', 'selectstart'].forEach(function (e) { document.addEventListener(e, function (ev) { ev.stopImmediatePropagation(); }, true); });

@@ -1047,6 +1047,7 @@ public class MainActivity extends Activity {
 
     /* upload bytes to a temp image host from native code (no browser CORS limits) and return the public URL */
     private String catbox(byte[] img) {
+        String last = "no response";
         String[] endpoints = {"https://catbox.moe/user/api.php", "https://litterbox.catbox.moe/resources/internals/api.php"};
         for (int k = 0; k < endpoints.length; k++) {
             try {
@@ -1067,15 +1068,16 @@ public class MainActivity extends Activity {
                 os.write(img);
                 os.write(("\r\n" + dash + boundary + dash + "\r\n").getBytes("UTF-8"));
                 os.flush(); os.close();
-                if (h.getResponseCode() != 200) continue;
+                int rc = h.getResponseCode();
+                if (rc != 200) { last = "HTTP" + rc; continue; }
                 java.io.InputStream in = h.getInputStream();
                 java.io.ByteArrayOutputStream bo = new java.io.ByteArrayOutputStream();
                 byte[] b = new byte[4096]; int n; while ((n = in.read(b)) > 0) bo.write(b, 0, n);
                 String r = bo.toString("UTF-8").trim();
                 if (r.startsWith("http")) return r;
-            } catch (Throwable e) { /* try next */ }
+            } catch (Throwable e) { last = e.getClass().getSimpleName(); }
         }
-        return "";
+        return "ERR:" + last;
     }
 
     private WebResourceResponse fetchPdf(String url, String referer, String ua) {
@@ -1391,7 +1393,7 @@ public class MainActivity extends Activity {
                     try {
                         byte[] img = android.util.Base64.decode(b64, android.util.Base64.DEFAULT);
                         out = catbox(img);
-                    } catch (Throwable e) { out = ""; }
+                    } catch (Throwable e) { out = "ERR:" + e.getClass().getSimpleName(); }
                     final String fu = out == null ? "" : out;
                     ui.post(new Runnable() { public void run() { try { wv.evaluateJavascript("window.__vpUp&&window.__vpUp(" + id + "," + org.json.JSONObject.quote(fu) + ")", null); } catch (Exception e) { /* ignore */ } } });
                 }

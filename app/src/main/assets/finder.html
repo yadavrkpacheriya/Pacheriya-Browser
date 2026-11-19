@@ -27,6 +27,11 @@ p{color:#aaa;font-size:13.5px;line-height:1.45}
 <option value="Google Lens">Google Lens</option><option value="Yandex">Yandex</option><option value="Bing">Bing</option><option value="TinEye">TinEye</option></select>
 </div>
 <div id="again"></div>
+<div class="mem" style="margin-top:10px">
+<b>Or find it by name</b> — type an actor, a dialogue line, or anything you remember:
+<div class="find" style="margin:8px 0 0"><input id="ac" placeholder="actor name, a line of dialogue, scene..." autocomplete="off"><button id="acb">Find</button></div>
+<div id="acr" class="row" style="margin-top:8px"></div>
+</div>
 <div id="st"></div><div id="nameh"></div><div id="mem"></div><div id="out"></div>
 
 <hr class="hr">
@@ -130,7 +135,7 @@ function autoSearch(blob,tryEng){
  var engs=order(ENG), e=engs[tryEng%engs.length];
  st.innerHTML='Uploading the best frame, then opening '+e[0]+'…';
  uploadFrame(blob,function(u){
-   if(!u){st.innerHTML='Upload failed on this network. <a href="#" id="rt" style="color:#9a7bff">Tap to retry</a>';var rt=document.getElementById('rt');if(rt)rt.onclick=function(ev){ev.preventDefault();autoSearch(blob,tryEng)};return;}
+   if(!u||u.indexOf('ERR:')===0){st.innerHTML='Snap search could not upload'+(u&&u.indexOf('ERR:')===0?' ('+u.slice(4)+')':'')+'. Use “find by name” below, or <a href="#" id="rt" style="color:#9a7bff">retry</a>.';var rt=document.getElementById('rt');if(rt)rt.onclick=function(ev){ev.preventDefault();autoSearch(blob,tryEng)};return;}
    lastUrl=u; bump(e[0]); location.href=e[1](u);
  });
 }
@@ -202,6 +207,21 @@ box.innerHTML='<div class="mem"><b>Your sites</b> (tap to search the name above)
 Array.prototype.forEach.call(box.querySelectorAll('a'),function(a){a.onclick=function(e){e.preventDefault();var q=document.getElementById('q').value.trim();if(!q){document.getElementById('q').scrollIntoView();return}remember(q);siteSearch(a.dataset.s,q)}})}
 document.getElementById('csadd').onclick=function(){var host=document.getElementById('cs').value.trim();var q=document.getElementById('q').value.trim();if(!host)return;remHost(host);if(q){remember(q);siteSearch(host,q)}else{document.getElementById('cs').value='';}};
 document.getElementById('cs').addEventListener('keydown',function(e){if(e.key==='Enter')document.getElementById('csadd').click()});
+/* find by actor / dialogue / description: no face search — just looks up what you type */
+function actorSearch(q){
+ var box=document.getElementById('acr');box.innerHTML='';
+ var opts=[
+  ['Google',  'https://www.google.com/search?q='+encodeURIComponent(q+' movie')],
+  ['Which movie','https://www.google.com/search?q='+encodeURIComponent(q)+'+which+movie+scene'],
+  ['Actor films','https://www.google.com/search?q='+encodeURIComponent(q)+'+movies+list+filmography'],
+  ['IMDb',    'https://www.imdb.com/find/?q='+encodeURIComponent(q)],
+  ['YouTube', 'https://www.youtube.com/results?search_query='+encodeURIComponent(q)],
+  ['Dialogue','https://www.google.com/search?q='+encodeURIComponent('"'+q+'"')+'+movie+dialogue']
+ ];
+ opts.forEach(function(o){var b=document.createElement('button');b.className='b p';b.textContent=o[0];b.onclick=function(){location.href=o[1]};box.appendChild(b)});
+}
+document.getElementById('acb').onclick=function(){var q=document.getElementById('ac').value.trim();if(q)actorSearch(q)};
+document.getElementById('ac').addEventListener('keydown',function(e){if(e.key==='Enter')document.getElementById('acb').click()});
 showSites();
 showMem();
 </script>

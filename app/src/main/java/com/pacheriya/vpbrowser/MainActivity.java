@@ -1045,6 +1045,39 @@ public class MainActivity extends Activity {
         return "https://www.google.com/search?q=";
     }
 
+    /* upload bytes to a temp image host from native code (no browser CORS limits) and return the public URL */
+    private String catbox(byte[] img) {
+        String[] endpoints = {"https://catbox.moe/user/api.php", "https://litterbox.catbox.moe/resources/internals/api.php"};
+        for (int k = 0; k < endpoints.length; k++) {
+            try {
+                String boundary = "----vp" + System.nanoTime();
+                java.net.HttpURLConnection h = (java.net.HttpURLConnection) new java.net.URL(endpoints[k]).openConnection();
+                h.setConnectTimeout(15000); h.setReadTimeout(40000);
+                h.setDoOutput(true); h.setRequestMethod("POST");
+                h.setRequestProperty("User-Agent", "Mozilla/5.0");
+                h.setRequestProperty("Content-Type", "multipart/form-data; boundary=" + boundary);
+                java.io.OutputStream os = h.getOutputStream();
+                java.io.ByteArrayOutputStream pre = new java.io.ByteArrayOutputStream();
+                String dash = "--";
+                StringBuilder sb = new StringBuilder();
+                sb.append(dash).append(boundary).append("\r\n").append("Content-Disposition: form-data; name=\"reqtype\"\r\n\r\nfileupload\r\n");
+                if (k == 1) sb.append(dash).append(boundary).append("\r\n").append("Content-Disposition: form-data; name=\"time\"\r\n\r\n72h\r\n");
+                sb.append(dash).append(boundary).append("\r\n").append("Content-Disposition: form-data; name=\"fileToUpload\"; filename=\"f.jpg\"\r\n").append("Content-Type: image/jpeg\r\n\r\n");
+                os.write(sb.toString().getBytes("UTF-8"));
+                os.write(img);
+                os.write(("\r\n" + dash + boundary + dash + "\r\n").getBytes("UTF-8"));
+                os.flush(); os.close();
+                if (h.getResponseCode() != 200) continue;
+                java.io.InputStream in = h.getInputStream();
+                java.io.ByteArrayOutputStream bo = new java.io.ByteArrayOutputStream();
+                byte[] b = new byte[4096]; int n; while ((n = in.read(b)) > 0) bo.write(b, 0, n);
+                String r = bo.toString("UTF-8").trim();
+                if (r.startsWith("http")) return r;
+            } catch (Throwable e) { /* try next */ }
+        }
+        return "";
+    }
+
     private WebResourceResponse fetchPdf(String url, String referer, String ua) {
         try {
             java.net.HttpURLConnection h = (java.net.HttpURLConnection) new java.net.URL(url).openConnection();
@@ -1349,6 +1382,21 @@ public class MainActivity extends Activity {
             }).start();
         }
         @JavascriptInterface public void toast(final String s) { ui.post(new Runnable() { public void run() { MainActivity.this.toast(s); } }); }
+        @JavascriptInterface public void upload(final int id, final String b64) {
+            if (t.url == null || !t.url.startsWith("file:///android_asset/") || b64 == null) return;
+            final WebView wv = t.wv;
+            new Thread(new Runnable() {
+                public void run() {
+                    String out = "";
+                    try {
+                        byte[] img = android.util.Base64.decode(b64, android.util.Base64.DEFAULT);
+                        out = catbox(img);
+                    } catch (Throwable e) { out = ""; }
+                    final String fu = out == null ? "" : out;
+                    ui.post(new Runnable() { public void run() { try { wv.evaluateJavascript("window.__vpUp&&window.__vpUp(" + id + "," + org.json.JSONObject.quote(fu) + ")", null); } catch (Exception e) { /* ignore */ } } });
+                }
+            }).start();
+        }
         @JavascriptInterface public void dl(final String u) { if (u == null || u.isEmpty()) return; ui.post(new Runnable() { public void run() { Downloader.direct(MainActivity.this, u, t.wv.getSettings().getUserAgentString(), t.url, null); toast("Downloading PDF"); } }); }
         @JavascriptInterface public void trAsync(final int id, final String text, final String tl) {
             new Thread(new Runnable() {

@@ -57,15 +57,17 @@ var HOSTS=[
  {n:'uguu',url:'https://uguu.se/upload.php',form:function(b){var fd=new FormData();fd.append('files[]',new File([b],'f.jpg',{type:'image/jpeg'}));return fd;},parse:function(t){try{return JSON.parse(t).files[0].url}catch(e){return ''}}},
  {n:'tmpfiles',url:'https://tmpfiles.org/api/v1/upload',form:function(b){var fd=new FormData();fd.append('file',new File([b],'f.jpg',{type:'image/jpeg'}));return fd;},parse:function(t){try{var u=JSON.parse(t).data.url;return u.replace('tmpfiles.org/','tmpfiles.org/dl/')}catch(e){return ''}}}
 ];
+window.__vpUp=function(id,url){var f=upCbs[id];delete upCbs[id];if(f)f(url||'')};
+var upCbs={},upN=0;
 function uploadFrame(blob,cb){
- var i=0;
- (function tryHost(){
-   if(i>=HOSTS.length){cb('');return;}
-   var h=HOSTS[i++];
-   fetch(h.url,{method:'POST',body:h.form(blob)}).then(function(r){return r.text()}).then(function(t){
-     var u=h.parse(t); if(u&&/^https?:/.test(u))cb(u); else tryHost();
-   }).catch(tryHost);
- })();
+ /* run the upload in the app (no browser CORS limit); fall back to fetch for a normal browser */
+ if(window.VPApp&&VPApp.upload){
+   var r=new FileReader();r.onload=function(){var id=++upN;upCbs[id]=cb;try{VPApp.upload(id,String(r.result).split(',')[1])}catch(e){cb('')}};r.onerror=function(){cb('')};r.readAsDataURL(blob);return;
+ }
+ var i=0,HOSTS=[
+  {u:'https://catbox.moe/user/api.php',f:function(b){var fd=new FormData();fd.append('reqtype','fileupload');fd.append('fileToUpload',new File([b],'f.jpg',{type:'image/jpeg'}));return fd;},p:function(t){return t.trim().indexOf('http')===0?t.trim():''}}
+ ];
+ (function go(){if(i>=HOSTS.length){cb('');return;}var h=HOSTS[i++];fetch(h.u,{method:'POST',body:h.f(blob)}).then(function(r){return r.text()}).then(function(t){var u=h.p(t);if(u)cb(u);else go()}).catch(go)})();
 }
 var ENG=[
  ['Google Lens',function(u){return 'https://lens.google.com/uploadbyurl?url='+encodeURIComponent(u)}],

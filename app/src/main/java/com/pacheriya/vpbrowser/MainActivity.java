@@ -97,6 +97,7 @@ public class MainActivity extends Activity {
         final java.util.HashSet<String> covered = new java.util.HashSet<String>();
         int gen, pending, uaMode = -1; // -1 = follow global
         long loadStart;
+        String altScheme;
         boolean panelOpen, autoShown;
     }
 
@@ -578,6 +579,10 @@ public class MainActivity extends Activity {
         return t;
     }
 
+    private boolean sameHostOtherScheme(String a, String b) {
+        try { return Uri.parse(a).getHost() != null && Uri.parse(a).getHost().equals(Uri.parse(b).getHost()); } catch (Exception e) { return false; }
+    }
+
     private String upgrade(Tab t, String u) {
         if (httpsUp && u.startsWith("http://")) {
             Uri p = Uri.parse(u);
@@ -721,6 +726,7 @@ public class MainActivity extends Activity {
             @Override public void onPageStarted(WebView v, String u, Bitmap f) {
                 t.url = u;
                 t.loadStart = System.currentTimeMillis();
+                if (t.altScheme != null && !u.equals(t.altScheme) && !sameHostOtherScheme(u, t.altScheme)) t.altScheme = null;
                 if (u.startsWith("http")) Diag.bump("pages_opened");
                 if (t == cur && immersive) setReadMode(false);
                 else if (t == cur) showChrome();
@@ -740,6 +746,11 @@ public class MainActivity extends Activity {
                     t.fallback = null;
                     v.loadUrl(fb);
                     return;
+                }
+                if (t.altScheme != null && r.isForMainFrame()) {
+                    String alt = t.altScheme;
+                    t.altScheme = null;
+                    if (!alt.equals(r.getUrl().toString())) { v.loadUrl(alt); return; }
                 }
                 String fu = r.getUrl().toString();
                 String html = "<html><head><meta name='viewport' content='width=device-width,initial-scale=1'></head><body style='background:#111;color:#eee;font-family:sans-serif;padding:28px'>"
@@ -1697,8 +1708,10 @@ public class MainActivity extends Activity {
             boolean local = hostpart.matches("(10|127)\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}")
                 || hostpart.matches("192\\.168\\.\\d{1,3}\\.\\d{1,3}")
                 || hostpart.matches("172\\.(1[6-9]|2\\d|3[01])\\.\\d{1,3}\\.\\d{1,3}")
-                || hostpart.endsWith(".local") || hostpart.equals("localhost");
+                || hostpart.endsWith(".local") || hostpart.equals("localhost")
+                || hostpart.matches("[0-9.]+");
             url = (local ? "http://" : "https://") + q;
+            if (local) cur.altScheme = "https://" + q;
         }
         else url = searchBase() + Uri.encode(q);
         final String hh = hostOf(url);

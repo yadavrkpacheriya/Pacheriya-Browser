@@ -96,6 +96,7 @@ public class MainActivity extends Activity {
         final ArrayList<Entry> entries = new ArrayList<Entry>();
         final java.util.HashSet<String> covered = new java.util.HashSet<String>();
         int gen, pending, uaMode = -1; // -1 = follow global
+        long loadStart;
         boolean panelOpen, autoShown;
     }
 
@@ -286,6 +287,8 @@ public class MainActivity extends Activity {
 
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
+        Diag.init(this);
+        try { BuildBuild.CODE = getPackageManager().getPackageInfo(getPackageName(), 0).versionCode; } catch (Throwable e) { /* ignore */ }
         sp = getSharedPreferences("vpb", MODE_PRIVATE);
         adblock = sp.getBoolean("adblock", true);
         scripts = sp.getBoolean("scripts", true);
@@ -717,6 +720,8 @@ public class MainActivity extends Activity {
 
             @Override public void onPageStarted(WebView v, String u, Bitmap f) {
                 t.url = u;
+                t.loadStart = System.currentTimeMillis();
+                if (u.startsWith("http")) Diag.bump("pages_opened");
                 if (t == cur && immersive) setReadMode(false);
                 else if (t == cur) showChrome();
                 t.media.clear();
@@ -729,6 +734,7 @@ public class MainActivity extends Activity {
 
             @Override public void onReceivedError(WebView v, WebResourceRequest r, android.webkit.WebResourceError e) {
                 if (!r.isForMainFrame()) return;
+                Diag.log("PAGE_ERROR", String.valueOf(e.getDescription()) + " :: " + r.getUrl());
                 if (t.fallback != null && r.getUrl().toString().startsWith("https://")) {
                     String fb = t.fallback;
                     t.fallback = null;
@@ -750,6 +756,7 @@ public class MainActivity extends Activity {
             }
 
             @Override public void onPageFinished(WebView v, String u) {
+                if (u.startsWith("http") && t.loadStart > 0) { long ms = System.currentTimeMillis() - t.loadStart; if (ms > 8000) Diag.log("SLOW_PAGE", ms + "ms :: " + u); }
                 String ti = v.getTitle();
                 t.title = (ti == null || ti.isEmpty()) ? u : ti;
                 t.fallback = null;
@@ -1384,8 +1391,12 @@ public class MainActivity extends Activity {
             }).start();
         }
         @JavascriptInterface public void toast(final String s) { ui.post(new Runnable() { public void run() { MainActivity.this.toast(s); } }); }
+        @JavascriptInterface public String diag() { return Diag.report(); }
+        @JavascriptInterface public void diagClear() { Diag.clear(); }
+        @JavascriptInterface public void diagCopy(String txt) { try { android.content.ClipboardManager cm = (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE); cm.setPrimaryClip(android.content.ClipData.newPlainText("diagnostics", txt)); toast("Diagnostics copied - paste it to Claude"); } catch (Throwable e) { toast("Could not copy"); } }
         @JavascriptInterface public void webfetch(final int id, final String url) {
             if (t.url == null || !t.url.startsWith("file:///android_asset/") || url == null) return;
+            Diag.bump("assistant_searches");
             final WebView wv = t.wv;
             new Thread(new Runnable() {
                 public void run() {
@@ -1694,13 +1705,13 @@ public class MainActivity extends Activity {
 
     private void showMenu(View anchor) {
         boolean bm = cur != null && Store.isBookmarked(sp, cur.url);
-        final int[] ids = {25, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 19, 20, 21, 22, 23, 24, 17};
+        final int[] ids = {25, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 19, 20, 21, 22, 23, 24, 26, 17};
         final String[] icons = {"\u2728", "\uFF0B", "\uD83D\uDD12", "\u27F3", "\u203A", "\uD83D\uDD0D", bm ? "\u2605" : "\u2606",
             "\uD83D\uDCD1", "\uD83D\uDD53", "\u25A2", "\u25B6", "\uD83C\uDF10", "\u2B07", "\uD83D\uDD17", "\u21AA", "\u2699", "\u21BB",
-            saver ? "\uD83D\uDCC9" : "\uD83D\uDCCA", "\uD83D\uDCD6", "\uD83C\uDF10", "\u25B6", "\uD83D\uDDBC", "\uD83D\uDD0E", "\uD83D\uDCF9", "\u2715"};
+            saver ? "\uD83D\uDCC9" : "\uD83D\uDCCA", "\uD83D\uDCD6", "\uD83C\uDF10", "\u25B6", "\uD83D\uDDBC", "\uD83D\uDD0E", "\uD83D\uDCF9", "\uD83E\uDE7A", "\u2715"};
         final String[] labels = {"Assistant (smart search)", "New tab", "Private tab", "Reload", "Forward", "Find in page", bm ? "Remove bookmark" : "Add bookmark",
             "Bookmarks", "History", "Float video (PiP)", "Video Plus", "Translate page", "Downloads", "Copy link", "Share", "Settings", "Update",
-            saver ? "Data saver: ON" : "Data saver", "Reading mode", autoTr.isEmpty() ? "Auto-translate: off" : "Auto-translate: " + autoTr.toUpperCase(), autoPrev ? "Video previews: ON" : "Video previews: off", picTr ? "Picture translate: ON" : "Picture translate: off", "Find full video", "Camera live view", "Exit"};
+            saver ? "Data saver: ON" : "Data saver", "Reading mode", autoTr.isEmpty() ? "Auto-translate: off" : "Auto-translate: " + autoTr.toUpperCase(), autoPrev ? "Video previews: ON" : "Video previews: off", picTr ? "Picture translate: ON" : "Picture translate: off", "Find full video", "Camera live view", "Diagnostics (copy for Claude)", "Exit"};
 
         android.widget.ScrollView sv = new android.widget.ScrollView(this);
         LinearLayout box = new LinearLayout(this);
@@ -1785,6 +1796,9 @@ public class MainActivity extends Activity {
                 break;
             case 25:
                 if (cur != null) cur.wv.loadUrl("file:///android_asset/assistant.html");
+                break;
+            case 26:
+                if (cur != null) cur.wv.loadUrl("file:///android_asset/diag.html");
                 break;
             case 24:
                 if (cur != null) cur.wv.loadUrl("file:///android_asset/camera.html");

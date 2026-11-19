@@ -1,0 +1,62 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>History</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#101014;color:#e8e8ea;font-family:system-ui,Roboto,sans-serif;padding:0 0 40px}
+header{position:sticky;top:0;background:#17171e;padding:12px 14px;z-index:5;display:flex;align-items:center;gap:12px;box-shadow:0 1px 0 #262630}
+header h2{margin:0;font-size:18px;font-weight:600;flex:1}
+header .ic{color:#c9b3ff;font-size:20px;background:none;border:0}
+#search{width:calc(100% - 28px);margin:10px 14px 4px;background:#1c1c24;border:1px solid #2a2a33;color:#fff;border-radius:22px;padding:11px 16px;font-size:14px}
+.day{font-size:13px;font-weight:600;color:#aeb0b6;padding:16px 16px 6px}
+.it{display:flex;align-items:center;gap:12px;padding:10px 16px;cursor:pointer}
+.it:active{background:#1c1c24}
+.fav{width:28px;height:28px;border-radius:50%;background:#2a2a36;flex:none;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.fav img{width:18px;height:18px}
+.fav span{font-size:13px;color:#c9b3ff;font-weight:700}
+.meta{flex:1;min-width:0}
+.meta b{display:block;font-size:14.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.meta small{font-size:12px;color:#8a8c93;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
+.tm{font-size:12px;color:#8a8c93;flex:none}
+.del{color:#7a7c83;font-size:18px;padding:4px 8px;flex:none}
+.empty{color:#8a8c93;text-align:center;margin-top:60px}
+</style></head><body>
+<header><button class="ic" onclick="history.back()">&#8592;</button><h2 id="ttl">History</h2><button class="ic" id="clr">&#128465;</button></header>
+<input id="search" placeholder="Search history">
+<div id="list"><div class="empty">Loading…</div></div>
+<script>
+var key=(location.hash||'#hist').slice(1)==='bm'?'bm':'hist';
+document.getElementById('ttl').textContent=key==='bm'?'Bookmarks':'History';
+function parse(r){try{return JSON.parse(r||'[]')}catch(e){return[]}}
+function host(u){try{return new URL(u).hostname.replace(/^www\./,'')}catch(e){return u||''}}
+function fav(u){try{return 'https://www.google.com/s2/favicons?sz=64&domain='+host(u)}catch(e){return''}}
+function dayLabel(ts){if(!ts)return'Earlier';var d=new Date(ts),n=new Date();var sd=new Date(n);sd.setHours(0,0,0,0);var diff=Math.floor((sd-new Date(d.getFullYear(),d.getMonth(),d.getDate()))/86400000);
+ if(diff<=0)return'Today';if(diff===1)return'Yesterday';
+ return d.toLocaleDateString(undefined,{weekday:'short',day:'numeric',month:'short',year:d.getFullYear()!==n.getFullYear()?'numeric':undefined});}
+function tm(ts){if(!ts)return'';var d=new Date(ts);return d.toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'});}
+var data=[];
+function load(){data=parse((function(){try{return VPApp.savedList(key)}catch(e){return'[]'}})());render();}
+function render(){
+ var L=document.getElementById('list'),q=document.getElementById('search').value.trim().toLowerCase();
+ var d=data.slice().reverse();
+ if(q)d=d.filter(function(o){return ((o.t||'')+(o.u||'')).toLowerCase().indexOf(q)>=0});
+ if(!d.length){L.innerHTML='<div class="empty">'+(q?'No matches':'Nothing here yet')+'</div>';return;}
+ L.innerHTML='';var lastDay='';
+ d.forEach(function(o){
+  var dl=key==='hist'?dayLabel(o.ts):'';
+  if(dl&&dl!==lastDay){lastDay=dl;var h=document.createElement('div');h.className='day';h.textContent=dl;L.appendChild(h);}
+  var it=document.createElement('div');it.className='it';
+  var f=document.createElement('div');f.className='fav';
+  var im=document.createElement('img');im.src=fav(o.u);im.onerror=function(){f.innerHTML='<span>'+(host(o.u)[0]||'?').toUpperCase()+'</span>'};f.appendChild(im);
+  var m=document.createElement('div');m.className='meta';
+  m.innerHTML='<b></b><small></small>';m.querySelector('b').textContent=o.t||host(o.u);m.querySelector('small').textContent=o.u||'';
+  var t=document.createElement('div');t.className='tm';t.textContent=key==='hist'?tm(o.ts):'';
+  it.appendChild(f);it.appendChild(m);it.appendChild(t);
+  it.onclick=function(){try{VPApp.savedOpen(o.u)}catch(e){location.href=o.u}};
+  L.appendChild(it);
+ });
+}
+document.getElementById('clr').onclick=function(){if(confirm('Clear all '+(key==='bm'?'bookmarks':'history')+'?')){try{VPApp.savedClear(key)}catch(e){}load();}};
+document.getElementById('search').oninput=render;
+load();
+</script>
+</body></html>

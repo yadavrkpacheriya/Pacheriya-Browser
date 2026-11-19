@@ -1438,6 +1438,20 @@ public class MainActivity extends Activity {
             } catch (Throwable e) { /* ignore */ }
             return arr.toString();
         }
+        @JavascriptInterface public String savedList(String key) {
+            if (t.url == null || !t.url.startsWith("file:///android_asset/")) return "[]";
+            if (!"hist".equals(key) && !"bm".equals(key)) return "[]";
+            return Store.get(sp, key).toString();
+        }
+        @JavascriptInterface public void savedOpen(String url) {
+            if (t.url == null || !t.url.startsWith("file:///android_asset/") || url == null) return;
+            final String u = url;
+            ui.post(new Runnable() { public void run() { if (cur != null) cur.wv.loadUrl(u); } });
+        }
+        @JavascriptInterface public void savedClear(String key) {
+            if (t.url == null || !t.url.startsWith("file:///android_asset/")) return;
+            if ("hist".equals(key) || "bm".equals(key)) sp.edit().putString(key, "[]").apply();
+        }
         @JavascriptInterface public String listDownloads() {
             if (t.url == null || !t.url.startsWith("file:///android_asset/")) return "[]";
             org.json.JSONArray arr = new org.json.JSONArray();
@@ -1882,8 +1896,8 @@ public class MainActivity extends Activity {
             case 6:
                 if (cur.url.startsWith("http")) toast(Store.toggleBookmark(sp, cur.title, cur.url) ? "Bookmark added" : "Bookmark removed");
                 break;
-            case 7: showSaved("bm", "Bookmarks"); break;
-            case 8: showSaved("hist", "History"); break;
+            case 7: if (cur != null) cur.wv.loadUrl("file:///android_asset/history.html#bm"); break;
+            case 8: if (cur != null) cur.wv.loadUrl("file:///android_asset/history.html#hist"); break;
             case 9: if (playing) enterPip(); else toast("Start a video first"); break;
             case 10:
                 cur.wv.evaluateJavascript("(function(){var r=document.querySelector('#vplus-root');if(r){r.style.display='block';var f=r.querySelector('#vp-fab');if(f)f.click();}})()", null);

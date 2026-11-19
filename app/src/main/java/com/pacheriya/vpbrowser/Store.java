@@ -17,6 +17,7 @@ final class Store {
             JSONObject o = new JSONObject();
             o.put("t", title);
             o.put("u", url);
+            o.put("ts", System.currentTimeMillis());
             a.put(o);
             if (a.length() > 600) {
                 JSONArray b = new JSONArray();

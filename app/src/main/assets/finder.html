@@ -20,8 +20,13 @@ p{color:#aaa;font-size:13.5px;line-height:1.45}
 .tag{font-size:12px;color:#8a7;}
 </style></head><body>
 <h2>Find the full video</h2>
-<p>Step 1 — pick the clip (10-30 seconds). The app takes a few still pictures from it. Tap a search under any picture and it searches that frame by itself (no uploading again) to name the movie or find the full video.</p>
-<label class="pick">Choose a clip<input id="f" type="file" accept="video/*" style="display:none"></label>
+<p>Step 1 — pick the clip (10-30 seconds). The app picks the clearest frame from it, uploads it, and opens the reverse-image search automatically to name the movie or find the full video. Use the dropdown to choose which search engine.</p>
+<div style="display:flex;gap:8px;align-items:center;max-width:560px;margin:0 auto 10px">
+<label class="pick" style="flex:1;margin:0">Choose a clip<input id="f" type="file" accept="video/*" style="display:none"></label>
+<select id="eng" style="background:#2a2a3a;color:#c9b3ff;border:0;border-radius:12px;padding:12px;font-size:14px">
+<option value="Google Lens">Google Lens</option><option value="Yandex">Yandex</option><option value="Bing">Bing</option><option value="TinEye">TinEye</option></select>
+</div>
+<div id="again"></div>
 <div id="st"></div><div id="nameh"></div><div id="mem"></div><div id="out"></div>
 
 <hr class="hr">
@@ -40,7 +45,10 @@ var LS=function(k,d){try{return JSON.parse(localStorage.getItem('vpf_'+k))||d}ca
 var SV_=function(k,x){try{localStorage.setItem('vpf_'+k,JSON.stringify(x))}catch(e){}};
 /* the finder learns which search engine you actually use, and shows that one first and highlighted next time */
 function bump(name){var s=LS('eng',{});s[name]=(s[name]||0)+1;SV_('eng',s)}
-function order(list){var s=LS('eng',{});return list.slice().sort(function(a,b){return (s[b[0]]||0)-(s[a[0]]||0)})}
+function order(list){var pick=null;try{pick=document.getElementById('eng')&&document.getElementById('eng').value}catch(e){}
+ var s=LS('eng',{});var l=list.slice().sort(function(a,b){return (s[b[0]]||0)-(s[a[0]]||0)});
+ if(pick){l.sort(function(a,b){return (b[0]===pick?1:0)-(a[0]===pick?1:0)});}
+ return l;}
 
 /* Reverse image search needs a real image URL. The app uploads the frame to a temporary
    image host, then opens the search engine with that URL so it searches on its own. */
@@ -88,10 +96,43 @@ function card(blob){
  d.appendChild(r);out.appendChild(d);
 }
 
-function grab(times,i){if(i>=times.length){st.textContent='Done. Tap one search under any picture — it uploads that frame and searches by itself.';return}
-v.onseeked=function(){v.onseeked=null;var w=v.videoWidth,h=v.videoHeight;if(!w){grab(times,i+1);return}var s=Math.min(1,1280/Math.max(w,h)),c=document.createElement('canvas');c.width=Math.round(w*s);c.height=Math.round(h*s);
-c.getContext('2d').drawImage(v,0,0,c.width,c.height);c.toBlob(function(b){if(b)card(b);grab(times,i+1)},'image/jpeg',0.9)};
-try{v.currentTime=times[i]}catch(e){grab(times,i+1)}}
+/* detail score: busy, in-focus frames beat black/blurry/near-solid ones */
+function score(ctx,w,h){var d=ctx.getImageData(0,0,w,h).data,n=w*h,sum=0,sq=0,edge=0,prev=0;
+ for(var i=0;i<d.length;i+=4){var g=(d[i]*0.3+d[i+1]*0.59+d[i+2]*0.11);sum+=g;sq+=g*g;if(i>0)edge+=Math.abs(g-prev);prev=g;}
+ var mean=sum/n,varc=sq/n-mean*mean;
+ if(mean<14||mean>245)return 0;            /* almost black or white */
+ return varc*0.5+(edge/n)*140;              /* contrast + edges */
+}
+var frames=[],bestBlob=null;
+function grab(times,i){
+ if(i>=times.length){ pickDone(); return; }
+ v.onseeked=function(){v.onseeked=null;var w=v.videoWidth,h=v.videoHeight;if(!w){grab(times,i+1);return}
+  var s=Math.min(1,1280/Math.max(w,h)),c=document.createElement('canvas');c.width=Math.round(w*s);c.height=Math.round(h*s);
+  var cx=c.getContext('2d');cx.drawImage(v,0,0,c.width,c.height);
+  var sc=0;try{sc=score(cx,c.width,c.height)}catch(e){sc=1}
+  c.toBlob(function(b){if(b)frames.push({b:b,s:sc});grab(times,i+1)},'image/jpeg',0.9)};
+ try{v.currentTime=times[i]}catch(e){grab(times,i+1)}}
+function pickDone(){
+ if(!frames.length){st.textContent='Could not read pictures from this clip. Try another file.';return;}
+ frames.sort(function(a,b){return b.s-a.s});
+ bestBlob=frames[0].b;
+ st.innerHTML='Best frame chosen. Searching automatically…';
+ var ag=document.getElementById('again');
+ ag.innerHTML='<div class="mem">If it did not match: <a href="#" id="oe">search another engine</a> &nbsp;·&nbsp; <a href="#" id="af">try a different frame</a></div>';
+ document.getElementById('oe').onclick=function(ev){ev.preventDefault();window.__eng=(window.__eng||0)+1;autoSearch(bestBlob,window.__eng)};
+ document.getElementById('af').onclick=function(ev){ev.preventDefault();if(frames.length>1){frames.push(frames.shift());bestBlob=frames[0].b;lastUrl='';}autoSearch(bestBlob,0)};
+ autoSearch(bestBlob,0);
+}
+/* upload the best frame once, then open the chosen reverse-image engine straight on its results */
+function autoSearch(blob,tryEng){
+ var engs=order(ENG), e=engs[tryEng%engs.length];
+ st.innerHTML='Uploading the best frame, then opening '+e[0]+'…';
+ uploadFrame(blob,function(u){
+   if(!u){st.innerHTML='Upload failed on this network. <a href="#" id="rt" style="color:#9a7bff">Tap to retry</a>';var rt=document.getElementById('rt');if(rt)rt.onclick=function(ev){ev.preventDefault();autoSearch(blob,tryEng)};return;}
+   lastUrl=u; bump(e[0]); location.href=e[1](u);
+ });
+}
+var lastUrl='';
 
 /* sound search: for AI-edited clips the picture may be fake but the song/score is often the real one */
 function soundCard(){var d=document.createElement('div');d.className='fr';
@@ -112,9 +153,9 @@ function showMem(){var box=document.getElementById('mem');var h=LS('solved',[]);
 box.innerHTML='<div class="mem"><b>Found before</b> (tap to check where to watch):<br>'+h.map(function(x){return '<a href="#" data-n="'+encodeURIComponent(x.n)+'">'+x.n.replace(/</g,'&lt;')+'</a>'}).join(' &nbsp;·&nbsp; ')+'</div>';
 Array.prototype.forEach.call(box.querySelectorAll('a'),function(a){a.onclick=function(e){e.preventDefault();var n=decodeURIComponent(a.dataset.n);document.getElementById('q').value=n;svc(n);document.getElementById('q').scrollIntoView()}})}
 
-document.getElementById('f').onchange=function(){var f=this.files[0];if(!f)return;out.innerHTML='';st.textContent='Reading the clip...';
+document.getElementById('f').onchange=function(){var f=this.files[0];if(!f)return;out.innerHTML='';frames=[];bestBlob=null;lastUrl='';st.textContent='Reading the clip…';
 nameHint(f.name);
-v.src=URL.createObjectURL(f);v.onloadedmetadata=function(){var d=isFinite(v.duration)&&v.duration>0?v.duration:10;soundCard();grab([0.12,0.32,0.52,0.72,0.9].map(function(p){return Math.max(0.1,d*p)}),0)};
+v.src=URL.createObjectURL(f);v.onloadedmetadata=function(){var d=isFinite(v.duration)&&v.duration>0?v.duration:10;soundCard();grab([0.1,0.25,0.4,0.55,0.7,0.85].map(function(p){return Math.max(0.1,d*p)}),0)};
 v.onerror=function(){st.textContent='This file could not be read as a video. Try another clip.'}};
 
 /* search by the file's own name: clips are often named after the movie, so offer the cleaned name as a search */

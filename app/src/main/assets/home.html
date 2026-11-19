@@ -2,6 +2,10 @@
 <style>body{margin:0;background:#0f0f14;color:#eee;font-family:system-ui,sans-serif;padding:28px 14px 60px}
 h1{font-size:24px;margin:10px 0 4px;text-align:center}p.s{color:#9aa;margin:0 0 18px;font-size:13px;text-align:center}
 form{max-width:560px;margin:0 auto 18px}input{width:100%;box-sizing:border-box;padding:13px 18px;border-radius:26px;border:1px solid #333;background:#1c1c24;color:#fff;font-size:16px}
+.sb{max-width:560px;margin:0 auto 18px;display:flex;align-items:center;gap:8px;background:#1c1c24;border:1px solid #333;border-radius:26px;padding:4px 6px 4px 4px}
+.sb select{appearance:none;-webkit-appearance:none;background:#2a2a3a;color:#c9b3ff;border:0;border-radius:22px;padding:11px 10px;font-size:13px;max-width:124px}
+.sb input{flex:1;border:0;background:transparent;padding:12px 6px}
+.sb button{background:#6a4cff;color:#fff;border:0;border-radius:22px;width:40px;height:40px;font-size:17px;flex:none}
 details{max-width:560px;margin:0 auto 10px;background:#17171e;border-radius:14px;padding:2px 12px}
 summary{padding:13px 4px;font-size:15px;font-weight:600;cursor:pointer;list-style:none}summary::-webkit-details-marker{display:none}
 summary:after{content:"\25BE";float:right;color:#8a8}details[open] summary:after{content:"\25B4"}
@@ -9,8 +13,34 @@ summary:after{content:"\25BE";float:right;color:#8a8}details[open] summary:after
 .g a{display:block;padding:12px 8px;border-radius:10px;background:#22222c;color:#fff;text-decoration:none;font-size:13.5px;text-align:center}
 .a summary{color:#f6a}</style></head>
 <body><h1>Video Plus Browser</h1><p class="s">Search, type an address, or pick a site</p>
-<form onsubmit="var q=document.getElementById('q').value.trim();if(!q)return false;location.href=/^[^ ]+\.[^ ]+$/.test(q)||/^https?:/.test(q)?(/^https?:/.test(q)?q:'https://'+q):'https://www.google.com/search?q='+encodeURIComponent(q);return false"><input id="q" placeholder="Search or type address" autocomplete="off"></form>
-<a href="finder.html" style="display:block;margin:0 0 14px;padding:12px;border-radius:12px;background:#23233a;color:#c9b3ff;text-align:center;text-decoration:none;font-size:15px">Find the full video from a short clip</a><form onsubmit="var q=document.getElementById('mq').value.trim();location.href='manga.html'+(q?'#s/'+encodeURIComponent(q):'');return false" style="margin-top:-6px"><input id="mq" placeholder="Search manga, manhwa, comics - read here" autocomplete="off" style="border-color:#6c4dff"></form>
+<form class="sb" onsubmit="return doSearch()">
+<select id="mode" aria-label="Search type">
+<option value="web">Google</option>
+<option value="bing">Bing</option>
+<option value="ddg">DuckDuckGo</option>
+<option value="yt">YouTube</option>
+<option value="manga">Manga</option>
+<option value="finder">Video finder</option>
+</select>
+<input id="q" placeholder="Search or type a site address" autocomplete="off">
+<button type="submit">&#10140;</button>
+</form>
+<script>
+function isUrl(q){return /^https?:\/\//i.test(q)||/^[^\s]+\.[a-z]{2,}([\/:?#].*)?$/i.test(q)}
+function doSearch(){var q=document.getElementById('q').value.trim(),m=document.getElementById('mode').value;
+ if(!q){if(m==='finder')location.href='finder.html';else if(m==='manga')location.href='manga.html';return false}
+ if(isUrl(q)){location.href=/^https?:/i.test(q)?q:'https://'+q;return false}
+ var e=encodeURIComponent(q);
+ if(m==='finder'){location.href='finder.html';return false}
+ if(m==='manga'){location.href='manga.html#s/'+e;return false}
+ if(m==='bing')location.href='https://www.bing.com/search?q='+e;
+ else if(m==='ddg')location.href='https://duckduckgo.com/?q='+e;
+ else if(m==='yt')location.href='https://www.youtube.com/results?search_query='+e;
+ else location.href='https://www.google.com/search?q='+e;
+ return false}
+try{var sm=localStorage.getItem('vp_mode');if(sm)document.getElementById('mode').value=sm;}catch(e){}
+document.getElementById('mode').onchange=function(){try{localStorage.setItem('vp_mode',this.value)}catch(e){}};
+</script>
 <div id="c"></div>
 <script>
 var D=[["Video & Streaming (free, no account)", [["YouTube", "m.youtube.com"], ["Dailymotion", "dailymotion.com"], ["Vimeo", "vimeo.com"], ["MX Player", "mxplayer.in"], ["Tubi", "tubitv.com"], ["Pluto TV", "pluto.tv"], ["Internet Archive", "archive.org"], ["Bilibili", "bilibili.tv"], ["Rumble", "rumble.com"], ["Odysee", "odysee.com"], ["Twitch", "twitch.tv"]]], ["Dragon Ball (free to read / check where to watch)", [["MANGA Plus: Dragon Ball Super", "mangaplus.shueisha.co.jp"], ["JustWatch: DBZ in India", "justwatch.com/in/tv-show/dragon-ball-z"], ["Dragon Ball Official", "dragonball-official.com"]]], ["Free Movies (legal, no sign-in)", [["Internet Archive Films (download)", "archive.org/details/feature_films"], ["Public Domain Movies", "publicdomainmovies.net"], ["Classic Cinema Online", "classiccinemaonline.com"], ["Blender Open Movies (download)", "studio.blender.org/films"], ["Wikimedia Commons Films", "commons.wikimedia.org/wiki/Category:Feature_films"], ["Open Culture Free Movies", "openculture.com/freemoviesonline"], ["Tubi", "tubitv.com"], ["Pluto TV", "pluto.tv"], ["MX Player", "mxplayer.in"], ["Vimeo Public Domain", "vimeo.com/channels/publicdomainfilms"], ["Retrovision", "retrovision.tv"]]], ["Movies & Shows Info", [["IMDb", "imdb.com"], ["Rotten Tomatoes", "rottentomatoes.com"], ["JustWatch", "justwatch.com"], ["TMDB", "themoviedb.org"], ["Letterboxd", "letterboxd.com"], ["BookMyShow", "in.bookmyshow.com"]]], ["Manga & Webtoons (free to read)", [["MANGA Plus (Shueisha)", "mangaplus.shueisha.co.jp"], ["MangaDex", "mangadex.org"], ["WEBTOON", "webtoons.com"], ["Tapas", "tapas.io"], ["K Manga (Kodansha)", "kmanga.kodansha.com"], ["Comikey", "comikey.com"], ["Toonsutra (Indian)", "toonsutra.com"], ["Pratilipi Comics (Hindi)", "pratilipicomics.com"]]], ["Comics (free previews and classics)", [["Marvel Comics (previews)", "marvel.com/comics"], ["DC Comics (previews)", "dc.com"], ["Raj Comics", "rajcomics.com"], ["Internet Archive Comics", "archive.org/details/comics"], ["Digital Comic Museum", "digitalcomicmuseum.com"], ["Comic Book Plus", "comicbookplus.com"], ["Comic Vine (info)", "comicvine.gamespot.com"]]], ["Japan, Korea, China manga (original sites, free)", [["Shonen Jump+ (Japan)", "shonenjumpplus.com"], ["Comic Walker (Japan)", "comic-walker.com"], ["Pixiv Comic (Japan)", "comic.pixiv.net"], ["Naver Webtoon (Korea)", "comic.naver.com"], ["Bilibili Comics (China)", "manga.bilibili.com"], ["Kuaikan (China)", "kuaikanmanhua.com"], ["Tencent Comics (China)", "ac.qq.com"], ["WEBTOON Global", "webtoons.com"]]], ["Novels & Web Novels (free to read)", [["Royal Road", "royalroad.com"], ["Wattpad", "wattpad.com"], ["Webnovel", "webnovel.com"], ["Wuxiaworld", "wuxiaworld.com"], ["Syosetu (Japan)", "syosetu.com"], ["Kakuyomu (Japan)", "kakuyomu.jp"], ["Novel Updates (index)", "novelupdates.com"], ["Project Gutenberg", "gutenberg.org"], ["Standard Ebooks", "standardebooks.org"], ["Wikisource", "wikisource.org"], ["Pratilipi (Hindi)", "pratilipi.com"], ["Archive of Our Own", "archiveofourown.org"]]], ["Music & Audio (no account)", [["YouTube Music", "music.youtube.com"], ["JioSaavn", "jiosaavn.com"], ["Gaana", "gaana.com"], ["SoundCloud", "soundcloud.com"], ["Audiomack", "audiomack.com"], ["Bandcamp", "bandcamp.com"], ["Internet Archive Audio", "archive.org/details/audio"]]], ["Social (readable without an account)", [["Reddit", "reddit.com"], ["Threads", "threads.net"], ["Tumblr", "tumblr.com"], ["Bluesky", "bsky.app"], ["Mastodon", "mastodon.social"], ["9GAG", "9gag.com"], ["Imgur", "imgur.com"], ["Quora", "quora.com"]]], ["Gaming (free)", [["Steam Store", "store.steampowered.com"], ["Epic Games Store", "store.epicgames.com"], ["GOG", "gog.com"], ["itch.io (free games)", "itch.io"], ["IGN", "ign.com"], ["CrazyGames", "crazygames.com"], ["Poki", "poki.com"], ["Miniclip", "miniclip.com"], ["Y8", "y8.com"], ["Chess.com", "chess.com"], ["Lichess", "lichess.org"]]], ["Tools & AI (no account)", [["Google", "google.com"], ["Google Maps", "maps.google.com"], ["Google Translate", "translate.google.com"], ["Google Lens", "lens.google.com"], ["DuckDuckGo", "duckduckgo.com"], ["ChatGPT", "chatgpt.com"], ["Wikipedia", "wikipedia.org"], ["GitHub", "github.com"], ["Speedtest", "speedtest.net"], ["WeTransfer", "wetransfer.com"], ["Wayback Machine", "web.archive.org"]]]],AD=[["Pornhub", "pornhub.org"], ["XVideos", "xvideos.com"], ["XNXX", "xnxx.com"], ["xHamster", "xhamster.com"], ["Eporner", "eporner.com"], ["RedTube", "redtube.com"], ["SpankBang", "spankbang.com"], ["YouPorn", "youporn.com"], ["Tube8", "tube8.com"], ["TNAFlix", "tnaflix.com"], ["Beeg", "beeg.com"], ["Thumbzilla", "thumbzilla.com"], ["HQPorner", "hqporner.com"], ["Txxx", "txxx.com"], ["PornOne", "pornone.com"], ["Porntrex", "porntrex.com"], ["Fapster", "fapster.xxx"], ["Pornzog", "pornzog.com"]],CM=[["Chaturbate", "chaturbate.com"], ["Stripchat", "stripchat.com"], ["BongaCams", "bongacams.com"], ["Cam4", "cam4.com"], ["MyFreeCams", "myfreecams.com"]],ST=[["Literotica (stories)", "literotica.com"], ["Soundgasm (audio)", "soundgasm.net"], ["Archive of Our Own (Mature)", "archiveofourown.org"]],GA=[["Oglaf (adult fantasy comedy webcomic, free)", "oglaf.com"], ["Menage a 3 (adult webcomic, free)", "ma3comic.com"], ["Hentai Foundry (artist comics and art)", "hentai-foundry.com"], ["Slipshine (free weekly adult comic)", "slipshine.net"], ["GlobalComix (creator comics, some adult)", "globalcomix.com"], ["itch.io adult comics (by artists)", "itch.io/comics"]];

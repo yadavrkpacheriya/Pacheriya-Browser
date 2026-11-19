@@ -1402,6 +1402,58 @@ public class MainActivity extends Activity {
             }).start();
         }
         @JavascriptInterface public void toast(final String s) { ui.post(new Runnable() { public void run() { MainActivity.this.toast(s); } }); }
+        @JavascriptInterface public String listDownloads() {
+            if (t.url == null || !t.url.startsWith("file:///android_asset/")) return "[]";
+            org.json.JSONArray arr = new org.json.JSONArray();
+            try {
+                String[] proj = { MediaStore.MediaColumns._ID, MediaStore.MediaColumns.DISPLAY_NAME, MediaStore.MediaColumns.SIZE, MediaStore.MediaColumns.MIME_TYPE, MediaStore.MediaColumns.DATE_ADDED };
+                String sel = MediaStore.MediaColumns.RELATIVE_PATH + " LIKE ?";
+                android.database.Cursor cur2 = getContentResolver().query(MediaStore.Downloads.EXTERNAL_CONTENT_URI, proj, sel, new String[]{ "%VideoPlus%" }, MediaStore.MediaColumns.DATE_ADDED + " DESC");
+                if (cur2 != null) {
+                    while (cur2.moveToNext()) {
+                        long idv = cur2.getLong(0);
+                        org.json.JSONObject o = new org.json.JSONObject();
+                        o.put("id", idv);
+                        o.put("name", cur2.getString(1));
+                        o.put("size", cur2.getLong(2));
+                        o.put("mime", cur2.getString(3) == null ? "video/*" : cur2.getString(3));
+                        o.put("uri", android.content.ContentUris.withAppendedId(MediaStore.Downloads.EXTERNAL_CONTENT_URI, idv).toString());
+                        arr.put(o);
+                    }
+                    cur2.close();
+                }
+                // also scan the file folder for mp4 saved by the parallel downloader
+                java.io.File dir = new java.io.File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS), "VideoPlus");
+                java.io.File[] fl = dir.listFiles();
+                if (fl != null) for (java.io.File f : fl) {
+                    if (!f.isFile()) continue;
+                    boolean seen = false;
+                    for (int i = 0; i < arr.length(); i++) if (f.getName().equals(arr.getJSONObject(i).optString("name"))) { seen = true; break; }
+                    if (seen) continue;
+                    org.json.JSONObject o = new org.json.JSONObject();
+                    o.put("name", f.getName()); o.put("size", f.length());
+                    o.put("mime", f.getName().endsWith(".mp4") ? "video/mp4" : "video/*");
+                    o.put("uri", androidx.core.content.FileProvider.getUriForFile(MainActivity.this, getPackageName() + ".fileprovider", f).toString());
+                    arr.put(o);
+                }
+            } catch (Throwable e) { /* ignore */ }
+            return arr.toString();
+        }
+        @JavascriptInterface public void playDownload(String uri, String mime) {
+            if (t.url == null || !t.url.startsWith("file:///android_asset/") || uri == null) return;
+            ui.post(new Runnable() { public void run() {
+                try {
+                    Intent in = new Intent(Intent.ACTION_VIEW);
+                    in.setDataAndType(Uri.parse(uri), mime == null ? "video/*" : mime);
+                    in.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                    startActivity(Intent.createChooser(in, "Play with"));
+                } catch (Throwable e) { toast("No player available"); }
+            }});
+        }
+        @JavascriptInterface public void deleteDownload(String uri) {
+            if (t.url == null || !t.url.startsWith("file:///android_asset/") || uri == null) return;
+            try { getContentResolver().delete(Uri.parse(uri), null, null); } catch (Throwable e) { try { new java.io.File(Uri.parse(uri).getPath()).delete(); } catch (Throwable x) {} }
+        }
         @JavascriptInterface public String diag() { return (t.url != null && t.url.startsWith("file:///android_asset/")) ? Diag.report() : ""; }
         @JavascriptInterface public void diagClear() { if (t.url != null && t.url.startsWith("file:///android_asset/")) Diag.clear(); }
         @JavascriptInterface public void diagCopy(String txt) { if (t.url == null || !t.url.startsWith("file:///android_asset/")) return; try { android.content.ClipboardManager cm = (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE); cm.setPrimaryClip(android.content.ClipData.newPlainText("diagnostics", txt)); toast("Diagnostics copied - paste it to Claude"); } catch (Throwable e) { toast("Could not copy"); } }
@@ -1802,7 +1854,7 @@ public class MainActivity extends Activity {
                 if (cur.url.startsWith("http")) cur.wv.loadUrl("https://translate.google.com/translate?sl=auto&tl=en&u=" + Uri.encode(cur.url));
                 break;
             case 12:
-                try { startActivity(new Intent(DownloadManager.ACTION_VIEW_DOWNLOADS)); } catch (Exception e) { toast("Open the Files app > Downloads > VideoPlus"); }
+                if (cur != null) cur.wv.loadUrl("file:///android_asset/library.html");
                 break;
             case 13: copy(cur.url); break;
             case 14: share(cur.url); break;

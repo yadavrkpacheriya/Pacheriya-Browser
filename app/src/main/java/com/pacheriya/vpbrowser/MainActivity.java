@@ -1402,9 +1402,9 @@ public class MainActivity extends Activity {
             }).start();
         }
         @JavascriptInterface public void toast(final String s) { ui.post(new Runnable() { public void run() { MainActivity.this.toast(s); } }); }
-        @JavascriptInterface public String diag() { return Diag.report(); }
-        @JavascriptInterface public void diagClear() { Diag.clear(); }
-        @JavascriptInterface public void diagCopy(String txt) { try { android.content.ClipboardManager cm = (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE); cm.setPrimaryClip(android.content.ClipData.newPlainText("diagnostics", txt)); toast("Diagnostics copied - paste it to Claude"); } catch (Throwable e) { toast("Could not copy"); } }
+        @JavascriptInterface public String diag() { return (t.url != null && t.url.startsWith("file:///android_asset/")) ? Diag.report() : ""; }
+        @JavascriptInterface public void diagClear() { if (t.url != null && t.url.startsWith("file:///android_asset/")) Diag.clear(); }
+        @JavascriptInterface public void diagCopy(String txt) { if (t.url == null || !t.url.startsWith("file:///android_asset/")) return; try { android.content.ClipboardManager cm = (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE); cm.setPrimaryClip(android.content.ClipData.newPlainText("diagnostics", txt)); toast("Diagnostics copied - paste it to Claude"); } catch (Throwable e) { toast("Could not copy"); } }
         @JavascriptInterface public void webfetch(final int id, final String url) {
             if (t.url == null || !t.url.startsWith("file:///android_asset/") || url == null) return;
             Diag.bump("assistant_searches");

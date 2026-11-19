@@ -755,9 +755,24 @@
 
   /* ---------- gestures (work even if the site covers the video with its own layers) ---------- */
   var g = null, lastTap = 0, lastX = 0;
+  function layoutRect(v) {
+    /* bounding box ignoring any aspect scale transform, so gestures cover the whole video */
+    var r = v.getBoundingClientRect();
+    var tr = v.style.transform;
+    if (tr && tr.indexOf('scale') >= 0) {
+      var m = tr.match(/scale\(([^,\)]+),?([^\)]*)\)/);
+      if (m) {
+        var sx = parseFloat(m[1]) || 1, sy = parseFloat(m[2] || m[1]) || 1;
+        var cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+        var fw = r.width / sx, fh = r.height / sy;
+        return { left: cx - fw / 2, right: cx + fw / 2, top: cy - fh / 2, bottom: cy + fh / 2, width: fw, height: fh };
+      }
+    }
+    return r;
+  }
   function hit(t) {
     for (var i = 0; i < vids.length; i++) {
-      var r = vids[i].getBoundingClientRect();
+      var r = layoutRect(vids[i]);
       if (t.clientX >= r.left && t.clientX <= r.right && t.clientY >= r.top && t.clientY <= r.bottom) return { v: vids[i], r: r };
     }
     return null;

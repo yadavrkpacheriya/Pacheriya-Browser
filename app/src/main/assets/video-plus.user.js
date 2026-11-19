@@ -83,6 +83,22 @@
 
   
 
+  /* when a site (YouTube etc.) fullscreens the bare <video>, redirect to its container so Video Plus stays on top */
+  (function () {
+    try {
+      var proto = HTMLVideoElement.prototype, orig = proto.requestFullscreen || proto.webkitRequestFullscreen || proto.mozRequestFullScreen;
+      if (!orig) return;
+      var name = proto.requestFullscreen ? 'requestFullscreen' : (proto.webkitRequestFullscreen ? 'webkitRequestFullscreen' : 'mozRequestFullScreen');
+      proto[name] = function () {
+        try {
+          var box = (window.__vpBox ? window.__vpBox(this) : this);
+          if (box && box !== this) { var f = box.requestFullscreen || box.webkitRequestFullscreen || box.mozRequestFullScreen; if (f) return f.call(box); }
+        } catch (e) {}
+        return orig.apply(this, arguments);
+      };
+    } catch (e) {}
+  })();
+
   /* ---------- target video ---------- */
   var vids = [];
   function scan() {
@@ -584,6 +600,7 @@
   });
 
   /* ---------- auto player mode: starts when a video plays ---------- */
+  window.__vpBox = playerBox;
   function playerBox(v) {
     var b = v, r = v.getBoundingClientRect(), p = v.parentElement;
     while (p && p !== document.body && p !== document.documentElement) {

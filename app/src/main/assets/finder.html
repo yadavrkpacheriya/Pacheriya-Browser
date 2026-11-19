@@ -27,6 +27,7 @@ p{color:#aaa;font-size:13.5px;line-height:1.45}
 <option value="Google Lens">Google Lens</option><option value="Yandex">Yandex</option><option value="Bing">Bing</option><option value="TinEye">TinEye</option></select>
 </div>
 <div id="again"></div>
+<div id="clues"></div>
 <div class="mem" style="margin-top:10px">
 <b>Or find it by name</b> — type an actor, a dialogue line, or anything you remember:
 <div class="find" style="margin:8px 0 0"><input id="ac" placeholder="actor name, a line of dialogue, scene..." autocomplete="off"><button id="acb">Find</button></div>
@@ -119,9 +120,38 @@ function grab(times,i){
   var sc=0;try{sc=score(cx,c.width,c.height)}catch(e){sc=1}
   c.toBlob(function(b){if(b)frames.push({b:b,s:sc});grab(times,i+1)},'image/jpeg',0.9)};
  try{v.currentTime=times[i]}catch(e){grab(times,i+1)}}
+window.__vpTxt=function(id,txt){var f=txtCbs[id];delete txtCbs[id];if(f)f(txt||'')};
+var txtCbs={},txtN=0;
+function readFrameText(blob,cb){
+ if(!(window.VPApp&&VPApp.frameText)){cb('');return;}
+ var r=new FileReader();r.onload=function(){var id=++txtN;txtCbs[id]=cb;try{VPApp.frameText(id,String(r.result).split(',')[1])}catch(e){cb('')}};r.onerror=function(){cb('')};r.readAsDataURL(blob);
+}
+function cleanName(t){
+ /* pull out plausible names / titles: capitalised words, drop noise */
+ var lines=(t||'').split('\n'),out=[];
+ lines.forEach(function(l){l=l.replace(/[^A-Za-z0-9 .&'-]/g,' ').replace(/\s+/g,' ').trim();
+  if(l.length<3||l.length>40)return;
+  if(/^(hd|full|video|subscribe|like|share|com|www|http|mp4|the end|watch|now|free)$/i.test(l))return;
+  var caps=(l.match(/\b[A-Z][a-z]+/g)||[]).length;
+  if(caps>=1&&/[A-Za-z]/.test(l))out.push(l);});
+ return out;
+}
+function showTextClues(){
+ var box=document.getElementById('clues');if(!box)return;
+ var all=[];var pend=Math.min(3,frames.length),done=0;
+ st.innerHTML='Reading any names or titles on screen…';
+ for(var i=0;i<pend;i++){ (function(b){ readFrameText(b,function(txt){ cleanName(txt).forEach(function(n){ if(all.indexOf(n)<0)all.push(n)}); if(++done>=pend)render(); }); })(frames[i].b); }
+ if(pend===0)render();
+ function render(){
+  if(!all.length){box.innerHTML='';return;}
+  box.innerHTML='<div class="mem"><b>Found on screen</b> (tap to search as the title/name):<br>'+all.slice(0,8).map(function(n){return '<a href="#" data-n="'+encodeURIComponent(n)+'">'+n.replace(/</g,'&lt;')+'</a>'}).join(' &nbsp;·&nbsp; ')+'</div>';
+  Array.prototype.forEach.call(box.querySelectorAll('a'),function(a){a.onclick=function(e){e.preventDefault();var n=decodeURIComponent(a.dataset.n);location.href='https://www.google.com/search?q='+encodeURIComponent(n+' movie')}});
+ }
+}
 function pickDone(){
  if(!frames.length){st.textContent='Could not read pictures from this clip. Try another file.';return;}
  frames.sort(function(a,b){return b.s-a.s});
+ showTextClues();
  bestBlob=frames[0].b;
  st.innerHTML='Best frame chosen. Searching automatically…';
  var ag=document.getElementById('again');

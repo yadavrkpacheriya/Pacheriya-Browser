@@ -1384,6 +1384,18 @@ public class MainActivity extends Activity {
             }).start();
         }
         @JavascriptInterface public void toast(final String s) { ui.post(new Runnable() { public void run() { MainActivity.this.toast(s); } }); }
+        @JavascriptInterface public void frameText(final int id, final String b64) {
+            if (t.url == null || !t.url.startsWith("file:///android_asset/") || b64 == null) return;
+            final WebView wv = t.wv;
+            ocrPool.execute(new Runnable() {
+                public void run() {
+                    String out = "";
+                    try { out = Ocr.readText(android.util.Base64.decode(b64, android.util.Base64.DEFAULT)); } catch (Throwable e) { out = ""; }
+                    final String fo = out == null ? "" : out;
+                    ui.post(new Runnable() { public void run() { try { wv.evaluateJavascript("window.__vpTxt&&window.__vpTxt(" + id + "," + org.json.JSONObject.quote(fo) + ")", null); } catch (Exception e) { /* ignore */ } } });
+                }
+            });
+        }
         @JavascriptInterface public void upload(final int id, final String b64) {
             if (t.url == null || !t.url.startsWith("file:///android_asset/") || b64 == null) return;
             final WebView wv = t.wv;

@@ -100,6 +100,26 @@ final class Ocr {
     }
 
     /** Returns {"w":..,"h":..,"b":[{"x","y","w","h","t"}]} or "" when there is nothing to translate. */
+    /* read just the readable Latin text from a frame (names, titles, logos) for the video finder */
+    static String readText(byte[] data) {
+        try {
+            BitmapFactory.Options o = new BitmapFactory.Options();
+            o.inJustDecodeBounds = true;
+            BitmapFactory.decodeByteArray(data, 0, data.length, o);
+            int W = o.outWidth, samp = 1;
+            while (W / samp > 2000) samp *= 2;
+            o = new BitmapFactory.Options();
+            o.inSampleSize = samp;
+            Bitmap bm = BitmapFactory.decodeByteArray(data, 0, data.length, o);
+            if (bm == null) return "";
+            List<Blk> blks = read(bm, 0, 0);
+            if (blks.isEmpty()) return "";
+            StringBuilder sb = new StringBuilder();
+            for (Blk b : blks) { if (sb.length() > 0) sb.append("\n"); sb.append(b.t); }
+            return sb.toString();
+        } catch (Throwable e) { return ""; }
+    }
+
     static String run(String url, String referer, String cookie, String ua, String tl) {
         try {
             HttpURLConnection h = (HttpURLConnection) new URL(url).openConnection();

@@ -52,22 +52,94 @@ final class Downloader {
         return n;
     }
 
-    static void direct(Context c, String url, String ua, String referer, String name) {
+    static void direct(final Context c, final String url, final String ua, final String referer, final String name) {
+        final String fn = fileName(url, name);
+        final String ref = (referer != null && referer.startsWith("http")) ? referer : null;
+        new Thread(new Runnable() {
+            public void run() {
+                long total = size(url, ua, ref);
+                /* 1DM-style: if the server supports ranges and the file is big enough, fetch it with many
+                   parallel connections; otherwise fall back to the system downloader */
+                if (total > 3_000_000L && parallelDirect(c, url, ua, ref, fn, total)) return;
+                try {
+                    DownloadManager.Request r = new DownloadManager.Request(Uri.parse(url));
+                    r.setTitle(fn);
+                    r.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+                    r.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "VideoPlus/" + fn);
+                    if (ua != null) r.addRequestHeader("User-Agent", ua);
+                    if (ref != null) r.addRequestHeader("Referer", ref);
+                    String ck = CookieManager.getInstance().getCookie(url);
+                    if (ck != null) r.addRequestHeader("Cookie", ck);
+                    ((DownloadManager) c.getSystemService(Context.DOWNLOAD_SERVICE)).enqueue(r);
+                    toast(c, "Downloading to Downloads/VideoPlus");
+                } catch (Exception e) { toast(c, "Download failed: " + e.getMessage()); }
+            }
+        }).start();
+    }
+
+    /** Download one file with up to 32 parallel range connections (1DM style). Returns false to fall back. */
+    private static boolean parallelDirect(final Context c, final String url, final String ua, final String ref, String fn, final long total) {
+        final int N = 32;
         try {
-            DownloadManager.Request r = new DownloadManager.Request(Uri.parse(url));
-            String fn = fileName(url, name);
-            r.setTitle(fn);
-            r.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
-            r.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "VideoPlus/" + fn);
-            if (ua != null) r.addRequestHeader("User-Agent", ua);
-            if (referer != null && referer.startsWith("http")) r.addRequestHeader("Referer", referer);
-            String ck = CookieManager.getInstance().getCookie(url);
-            if (ck != null) r.addRequestHeader("Cookie", ck);
-            ((DownloadManager) c.getSystemService(Context.DOWNLOAD_SERVICE)).enqueue(r);
-            toast(c, "Downloading to Downloads/VideoPlus");
-        } catch (Exception e) {
-            toast(c, "Download failed: " + e.getMessage());
-        }
+            java.io.File dir = new java.io.File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "VideoPlus");
+            dir.mkdirs();
+            final java.io.File out = new java.io.File(dir, fn);
+            final java.io.RandomAccessFile raf = new java.io.RandomAccessFile(out, "rw");
+            raf.setLength(total);
+            final long chunk = (total + N - 1) / N;
+            final NotificationManager nm = (NotificationManager) c.getSystemService(Context.NOTIFICATION_SERVICE);
+            try { nm.createNotificationChannel(new NotificationChannel("dl", "Downloads", NotificationManager.IMPORTANCE_LOW)); } catch (Throwable e) { /* ignore */ }
+            final int nid = (int) (System.nanoTime() & 0x3fffffff);
+            final java.util.concurrent.atomic.AtomicLong done = new java.util.concurrent.atomic.AtomicLong(0);
+            final java.util.concurrent.atomic.AtomicBoolean fail = new java.util.concurrent.atomic.AtomicBoolean(false);
+            java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(N);
+            List<java.util.concurrent.Future<?>> fs = new ArrayList<java.util.concurrent.Future<?>>();
+            for (int i = 0; i < N; i++) {
+                final long start = i * chunk;
+                if (start >= total) break;
+                final long end = Math.min(total - 1, start + chunk - 1);
+                fs.add(pool.submit(new Runnable() {
+                    public void run() {
+                        try {
+                            HttpURLConnection h = open(url, ua, ref);
+                            h.setRequestProperty("Range", "bytes=" + start + "-" + end);
+                            if (h.getResponseCode() != 206) throw new Exception("no range");
+                            InputStream in = h.getInputStream();
+                            byte[] buf = new byte[65536]; long pos = start; int n;
+                            while ((n = in.read(buf)) > 0) {
+                                synchronized (raf) { raf.seek(pos); raf.write(buf, 0, n); }
+                                pos += n; done.addAndGet(n);
+                            }
+                            in.close();
+                        } catch (Exception e) { fail.set(true); }
+                    }
+                }));
+            }
+            // progress
+            new Thread(new Runnable() { public void run() {
+                while (!fail.get()) {
+                    long d = done.get();
+                    try {
+                        Notification n = new Notification.Builder(c, "dl").setSmallIcon(android.R.drawable.stat_sys_download)
+                            .setContentTitle(out.getName()).setContentText((d / 1048576) + " / " + (total / 1048576) + " MB (32 parts)")
+                            .setProgress(100, (int) (d * 100 / Math.max(1, total)), false).setOngoing(true).build();
+                        nm.notify(nid, n);
+                    } catch (Throwable e) { /* ignore */ }
+                    if (d >= total) break;
+                    try { Thread.sleep(700); } catch (Exception e) { break; }
+                }
+            }}).start();
+            for (java.util.concurrent.Future<?> f : fs) f.get();
+            pool.shutdownNow();
+            raf.close();
+            if (fail.get()) { out.delete(); return false; }
+            try { android.media.MediaScannerConnection.scanFile(c, new String[]{ out.getAbsolutePath() }, null, null); } catch (Throwable e) {}
+            Notification dn = new Notification.Builder(c, "dl").setSmallIcon(android.R.drawable.stat_sys_download_done)
+                .setContentTitle(out.getName()).setContentText("Saved to Downloads/VideoPlus").setAutoCancel(true).build();
+            nm.notify(nid, dn);
+            toast(c, "Saved: " + out.getName());
+            return true;
+        } catch (Throwable e) { return false; }
     }
 
     // ---------- HLS ----------
@@ -249,7 +321,7 @@ final class Downloader {
                     OutputStream os = ctx.getContentResolver().openOutputStream(uri);
                     final int total = segs.size();
                     final java.util.concurrent.ConcurrentHashMap<String, byte[]> keys = new java.util.concurrent.ConcurrentHashMap<String, byte[]>();
-                    java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(8);
+                    java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(32);
                     List<java.util.concurrent.Future<byte[]>> fs = new ArrayList<java.util.concurrent.Future<byte[]>>();
                     int w = 0;
                     try {
@@ -261,7 +333,7 @@ final class Downloader {
                                     public byte[] call() throws Exception { return fetchSeg(su, ku, iv, sq, ua, ref, keys); }
                                 }));
                             }
-                            while (w < fs.size() && (fs.size() - w >= 20 || i == total)) {
+                            while (w < fs.size() && (fs.size() - w >= 48 || i == total)) {
                                 byte[] data;
                                 try { data = fs.get(w).get(); }
                                 catch (java.util.concurrent.ExecutionException ee) { throw new Exception(String.valueOf(ee.getCause() != null ? ee.getCause().getMessage() : ee.getMessage())); }

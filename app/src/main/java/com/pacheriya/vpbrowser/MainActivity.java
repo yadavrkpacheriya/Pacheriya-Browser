@@ -1384,6 +1384,18 @@ public class MainActivity extends Activity {
             }).start();
         }
         @JavascriptInterface public void toast(final String s) { ui.post(new Runnable() { public void run() { MainActivity.this.toast(s); } }); }
+        @JavascriptInterface public void webfetch(final int id, final String url) {
+            if (t.url == null || !t.url.startsWith("file:///android_asset/") || url == null) return;
+            final WebView wv = t.wv;
+            new Thread(new Runnable() {
+                public void run() {
+                    String out = "";
+                    try { out = Assistant.fetch(url); } catch (Throwable e) { out = ""; }
+                    final String fo = out == null ? "" : out;
+                    ui.post(new Runnable() { public void run() { try { wv.evaluateJavascript("window.__vpWeb&&window.__vpWeb(" + id + "," + org.json.JSONObject.quote(fo) + ")", null); } catch (Exception e) { /* ignore */ } } });
+                }
+            }).start();
+        }
         @JavascriptInterface public void frameText(final int id, final String b64) {
             if (t.url == null || !t.url.startsWith("file:///android_asset/") || b64 == null) return;
             final WebView wv = t.wv;
@@ -1682,11 +1694,11 @@ public class MainActivity extends Activity {
 
     private void showMenu(View anchor) {
         boolean bm = cur != null && Store.isBookmarked(sp, cur.url);
-        final int[] ids = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 19, 20, 21, 22, 23, 24, 17};
-        final String[] icons = {"\uFF0B", "\uD83D\uDD12", "\u27F3", "\u203A", "\uD83D\uDD0D", bm ? "\u2605" : "\u2606",
+        final int[] ids = {25, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 19, 20, 21, 22, 23, 24, 17};
+        final String[] icons = {"\u2728", "\uFF0B", "\uD83D\uDD12", "\u27F3", "\u203A", "\uD83D\uDD0D", bm ? "\u2605" : "\u2606",
             "\uD83D\uDCD1", "\uD83D\uDD53", "\u25A2", "\u25B6", "\uD83C\uDF10", "\u2B07", "\uD83D\uDD17", "\u21AA", "\u2699", "\u21BB",
             saver ? "\uD83D\uDCC9" : "\uD83D\uDCCA", "\uD83D\uDCD6", "\uD83C\uDF10", "\u25B6", "\uD83D\uDDBC", "\uD83D\uDD0E", "\uD83D\uDCF9", "\u2715"};
-        final String[] labels = {"New tab", "Private tab", "Reload", "Forward", "Find in page", bm ? "Remove bookmark" : "Add bookmark",
+        final String[] labels = {"Assistant (smart search)", "New tab", "Private tab", "Reload", "Forward", "Find in page", bm ? "Remove bookmark" : "Add bookmark",
             "Bookmarks", "History", "Float video (PiP)", "Video Plus", "Translate page", "Downloads", "Copy link", "Share", "Settings", "Update",
             saver ? "Data saver: ON" : "Data saver", "Reading mode", autoTr.isEmpty() ? "Auto-translate: off" : "Auto-translate: " + autoTr.toUpperCase(), autoPrev ? "Video previews: ON" : "Video previews: off", picTr ? "Picture translate: ON" : "Picture translate: off", "Find full video", "Camera live view", "Exit"};
 
@@ -1770,6 +1782,9 @@ public class MainActivity extends Activity {
                 break;
             case 23:
                 if (cur != null) cur.wv.loadUrl("file:///android_asset/finder.html");
+                break;
+            case 25:
+                if (cur != null) cur.wv.loadUrl("file:///android_asset/assistant.html");
                 break;
             case 24:
                 if (cur != null) cur.wv.loadUrl("file:///android_asset/camera.html");

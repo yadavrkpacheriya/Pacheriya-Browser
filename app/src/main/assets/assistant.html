@@ -1,0 +1,100 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Assistant</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#0f0f14;color:#eee;font-family:system-ui,sans-serif;display:flex;flex-direction:column;height:100vh}
+header{padding:12px 16px;background:#17171e;font-size:17px;font-weight:600;display:flex;align-items:center;gap:8px}
+header .sp{flex:1}header button{background:#2a2a36;color:#c9b3ff;border:0;border-radius:8px;padding:7px 11px;font-size:13px}
+#feed{flex:1;overflow:auto;padding:14px 12px 4px}
+.msg{max-width:92%;margin:0 0 12px;padding:11px 14px;border-radius:14px;line-height:1.5;font-size:15px;white-space:pre-wrap;word-wrap:break-word}
+.me{background:#2d2d6b;margin-left:auto;border-bottom-right-radius:4px}
+.ai{background:#1c1c24;border-bottom-left-radius:4px}
+.ai a{color:#9a7bff;text-decoration:none}
+.src{margin-top:8px;font-size:12.5px;color:#9aa}.src a{display:block;color:#9a7bff;margin:3px 0;text-decoration:none}
+.sug{color:#c9b3ff;font-size:13px;margin-top:6px}.sug a{color:#c9b3ff;margin-right:12px;text-decoration:none}
+footer{padding:8px;background:#17171e;display:flex;gap:8px}
+#q{flex:1;background:#1c1c24;border:1px solid #333;color:#fff;border-radius:22px;padding:12px 16px;font-size:15px}
+#send{background:#6a4cff;color:#fff;border:0;border-radius:50%;width:46px;height:46px;font-size:18px;flex:none}
+.dots::after{content:'';animation:d 1.2s steps(4,end) infinite}@keyframes d{0%{content:''}25%{content:'.'}50%{content:'..'}75%{content:'...'}}
+</style></head><body>
+<header><span>&#10024; Assistant</span><span class="sp"></span><button id="notes">My notes</button><button id="clr">Clear</button></header>
+<div id="feed"></div>
+<footer><input id="q" placeholder="Ask anything, or add a note" autocomplete="off"><button id="send">&#10148;</button></footer>
+<script>
+var feed=document.getElementById('feed'),qEl=document.getElementById('q');
+var LS=function(k,d){try{return JSON.parse(localStorage.getItem('as_'+k))||d}catch(e){return d}};
+var SV=function(k,x){try{localStorage.setItem('as_'+k,JSON.stringify(x))}catch(e){}};
+window.__vpWeb=function(id,t){var f=webCbs[id];delete webCbs[id];if(f)f(t||'')};
+var webCbs={},webN=0;
+function webfetch(url){return new Promise(function(res){ if(!(window.VPApp&&VPApp.webfetch)){res('');return;} var id=++webN;webCbs[id]=res;try{VPApp.webfetch(id,url)}catch(e){res('')} setTimeout(function(){if(webCbs[id]){delete webCbs[id];res('')}},25000); });}
+
+function bubble(cls,html){var d=document.createElement('div');d.className='msg '+cls;d.innerHTML=html;feed.appendChild(d);feed.scrollTop=feed.scrollHeight;return d;}
+function esc(s){return (s||'').replace(/[<>&]/g,function(c){return{'<':'&lt;','>':'&gt;','&':'&amp;'}[c]})}
+
+/* learn: remember questions + which domains gave the user answers they clicked */
+function learnClick(dom){var w=LS('dom',{});w[dom]=(w[dom]||0)+1;SV('dom',w);}
+function rankDomains(list){var w=LS('dom',{});return list.sort(function(a,b){return (w[host(b)]||0)-(w[host(a)]||0)});}
+function host(u){try{return new URL(u).hostname.replace(/^www\./,'')}catch(e){return u}}
+
+/* your own notes: searched first */
+function notes(){return LS('notes',[]);}
+function noteHit(q){var ns=notes(),ql=q.toLowerCase(),hits=[];ns.forEach(function(n){if(ql.split(/\s+/).some(function(w){return w.length>2&&n.toLowerCase().indexOf(w)>=0}))hits.push(n)});return hits;}
+
+/* DuckDuckGo HTML results, fetched natively (no CORS). Returns [{title,url,snippet}] */
+function searchWeb(q){
+ return webfetch('https://html.duckduckgo.com/html/?q='+encodeURIComponent(q)).then(function(t){
+   var out=[];
+   /* the native fetch returns cleaned text; also try the raw link pattern on the duckduckgo redirect */
+   var re=/uddg=([^&"']+)/g,m,seen={};
+   while((m=re.exec(t))&&out.length<6){try{var u=decodeURIComponent(m[1]);var hh=host(u);if(u.indexOf('http')===0&&!seen[u]&&!/duckduckgo/.test(hh)){seen[u]=1;out.push({url:u,title:hh})}}catch(e){}}
+   if(!out.length){ /* fallback: Bing */
+     return webfetch('https://www.bing.com/search?q='+encodeURIComponent(q)).then(function(t2){
+       var r2=/href="(https?:\/\/[^"]+)"/g,mm,o2=[],s2={};
+       while((mm=r2.exec(t2))&&o2.length<6){var u=mm[1],hh=host(u);if(!s2[u]&&!/bing\.com|microsoft/.test(hh)){s2[u]=1;o2.push({url:u,title:hh})}}
+       return o2;
+     });
+   }
+   return out;
+ });
+}
+
+function answer(q){
+ var nh=noteHit(q);
+ var intro='';
+ if(nh.length){intro='<b>From your notes:</b>\n'+esc(nh.join('\n'))+'\n\n';}
+ var b=bubble('ai','<span class="dots">Searching the web</span>');
+ searchWeb(q).then(function(res){
+   if(!res||!res.length){b.innerHTML=intro+(intro?'':'')+'I could not reach the web just now. Check your connection, or try rewording. '+(nh.length?'':'');feed.scrollTop=feed.scrollHeight;return;}
+   res=rankDomains(res.map(function(r){return r.url})).slice(0,4).map(function(u){return {url:u,title:host(u)}});
+   /* read the top result to pull a short answer */
+   webfetch(res[0].url).then(function(page){
+     var summary='';
+     if(page){var lines=page.split('\n').map(function(l){return l.trim()}).filter(function(l){return l.length>40});summary=lines.slice(0,4).join(' ');if(summary.length>600)summary=summary.slice(0,600)+'…';}
+     var html=intro;
+     if(summary)html+=esc(summary)+'\n\n';
+     else html+=(intro?'':'Here are the best sources I found:\n');
+     html+='<div class="src"><b>Sources</b>'+res.map(function(r){return '<a href="'+r.url+'" data-d="'+host(r.url)+'">'+esc(r.title)+'</a>'}).join('')+'</div>';
+     html+='<div class="sug">Not right? <a href="#" id="more">search the web yourself</a></div>';
+     b.innerHTML=html;feed.scrollTop=feed.scrollHeight;
+     Array.prototype.forEach.call(b.querySelectorAll('.src a'),function(a){a.onclick=function(){learnClick(a.dataset.d)}});
+     var mo=b.querySelector('#more');if(mo)mo.onclick=function(e){e.preventDefault();location.href='https://www.google.com/search?q='+encodeURIComponent(q)};
+   });
+ });
+}
+
+function ask(q){
+ q=q.trim();if(!q)return;
+ /* a note: "note: ..." or "remember ..." saves to your notes */
+ var nm=q.match(/^(note|remember|save)[:\s-]+(.+)/i);
+ if(nm){var ns=notes();ns.unshift(nm[2].trim());SV('notes',ns.slice(0,200));bubble('me',esc(q));bubble('ai','Saved to your notes. I\'ll check it first next time.');qEl.value='';return;}
+ bubble('me',esc(q));
+ var h=LS('hist',[]);h.unshift(q);SV('hist',h.slice(0,100));
+ qEl.value='';answer(q);
+}
+document.getElementById('send').onclick=function(){ask(qEl.value)};
+qEl.addEventListener('keydown',function(e){if(e.key==='Enter')ask(qEl.value)});
+document.getElementById('clr').onclick=function(){feed.innerHTML='';greet()};
+document.getElementById('notes').onclick=function(){var ns=notes();bubble('ai',ns.length?('<b>Your notes ('+ns.length+')</b>\n'+esc(ns.join('\n'))):'No notes yet. Type "note: ..." to add one.');};
+function greet(){bubble('ai','Hi! Ask me anything and I\'ll search the web and read the top pages for you.\n\n• Type "note: ..." to teach me a fact — I check your notes first.\n• I learn which sites you open and rank them higher over time.');}
+greet();
+</script>
+</body></html>

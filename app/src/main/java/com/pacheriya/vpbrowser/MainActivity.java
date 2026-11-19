@@ -257,6 +257,8 @@ public class MainActivity extends Activity {
     private int textZoom = 100;
     private String engine = "google";
     private ValueCallback<Uri[]> fileCb;
+    private GeolocationPermissions.Callback geoCb;
+    private String geoOrigin;
     private PermissionRequest pendPerm;
     private String[] pendRes;
     private LinearLayout findBar;
@@ -647,6 +649,7 @@ public class MainActivity extends Activity {
         s.setSupportMultipleWindows(true);
         s.setJavaScriptCanOpenWindowsAutomatically(true);
         s.setUseWideViewPort(true);
+        s.setGeolocationEnabled(true);
         s.setBuiltInZoomControls(true);
         s.setDisplayZoomControls(false);
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
@@ -823,9 +826,11 @@ public class MainActivity extends Activity {
                     .setPositiveButton("Allow", new DialogInterface.OnClickListener() {
                         public void onClick(DialogInterface d, int w) {
                             if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                                geoOrigin = origin; geoCb = cb;
                                 requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION}, 79);
+                            } else {
+                                cb.invoke(origin, true, true);
                             }
-                            cb.invoke(origin, true, false);
                         }
                     })
                     .setNegativeButton("Block", new DialogInterface.OnClickListener() {
@@ -836,14 +841,7 @@ public class MainActivity extends Activity {
             @Override public boolean onShowFileChooser(WebView v, ValueCallback<Uri[]> cb, FileChooserParams p) {
                 if (fileCb != null) fileCb.onReceiveValue(null);
                 fileCb = cb;
-                try {
-                    startActivityForResult(p.createIntent(), 77);
-                } catch (Exception e) {
-                    fileCb = null;
-                    toast("No file picker available");
-                    return false;
-                }
-                return true;
+                return showFilePicker(p);
             }
         });
 
@@ -880,13 +878,70 @@ public class MainActivity extends Activity {
             if (ok) pendPerm.grant(pendRes); else pendPerm.deny();
             pendPerm = null;
         }
+        if (code == 79 && geoCb != null) {
+            boolean ok = false;
+            for (int g : grants) if (g == PackageManager.PERMISSION_GRANTED) ok = true;
+            geoCb.invoke(geoOrigin, ok, ok);
+            geoCb = null; geoOrigin = null;
+        }
+    }
+
+    private Uri captureUri;
+
+    private boolean showFilePicker(WebChromeClient.FileChooserParams p) {
+        try {
+            String[] accept = p != null ? p.getAcceptTypes() : null;
+            String acc = "";
+            if (accept != null) for (String a : accept) if (a != null && !a.isEmpty()) acc += (acc.isEmpty() ? "" : ",") + a;
+            boolean wantsImage = acc.contains("image") || acc.isEmpty();
+            boolean wantsVideo = acc.contains("video") || acc.isEmpty();
+
+            Intent content = (p != null) ? p.createIntent() : new Intent(Intent.ACTION_GET_CONTENT).setType("*/*");
+            try {
+                content.addCategory(Intent.CATEGORY_OPENABLE);
+                if (content.getType() == null) content.setType("*/*");
+                content.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, p != null && p.getMode() == WebChromeClient.FileChooserParams.MODE_OPEN_MULTIPLE);
+            } catch (Exception e) { /* ignore */ }
+
+            ArrayList<Intent> extras = new ArrayList<Intent>();
+            captureUri = null;
+            if ((wantsImage || wantsVideo) && checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+                try {
+                    java.io.File dir = new java.io.File(getExternalCacheDir(), "shared");
+                    dir.mkdirs();
+                    java.io.File f = new java.io.File(dir, "cap_" + System.currentTimeMillis() + (wantsVideo && !wantsImage ? ".mp4" : ".jpg"));
+                    captureUri = androidx.core.content.FileProvider.getUriForFile(this, getPackageName() + ".fileprovider", f);
+                    if (wantsImage) { Intent c = new Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE); c.putExtra(android.provider.MediaStore.EXTRA_OUTPUT, captureUri); if (c.resolveActivity(getPackageManager()) != null) extras.add(c); }
+                    if (wantsVideo && !wantsImage) { Intent c = new Intent(android.provider.MediaStore.ACTION_VIDEO_CAPTURE); c.putExtra(android.provider.MediaStore.EXTRA_OUTPUT, captureUri); if (c.resolveActivity(getPackageManager()) != null) extras.add(c); }
+                } catch (Exception e) { captureUri = null; }
+            }
+
+            Intent chooser = new Intent(Intent.ACTION_CHOOSER);
+            chooser.putExtra(Intent.EXTRA_INTENT, content);
+            chooser.putExtra(Intent.EXTRA_TITLE, "Choose file");
+            if (!extras.isEmpty()) chooser.putExtra(Intent.EXTRA_INITIAL_INTENTS, extras.toArray(new Intent[0]));
+            startActivityForResult(chooser, 77);
+            return true;
+        } catch (Exception e) {
+            try { startActivityForResult(new Intent(Intent.ACTION_GET_CONTENT).setType("*/*").addCategory(Intent.CATEGORY_OPENABLE), 77); return true; }
+            catch (Exception e2) { fileCb = null; toast("No file picker available"); return false; }
+        }
     }
 
     @Override protected void onActivityResult(int req, int res, Intent data) {
         super.onActivityResult(req, res, data);
         if (req == 77 && fileCb != null) {
-            fileCb.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(res, data));
+            Uri[] out = null;
+            if (res == RESULT_OK) {
+                if (data == null || (data.getData() == null && data.getClipData() == null)) {
+                    if (captureUri != null) out = new Uri[]{ captureUri };
+                } else {
+                    out = WebChromeClient.FileChooserParams.parseResult(res, data);
+                }
+            }
+            fileCb.onReceiveValue(out);
             fileCb = null;
+            captureUri = null;
         }
     }
 

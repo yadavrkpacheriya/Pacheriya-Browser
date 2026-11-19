@@ -39,7 +39,10 @@ function doSearch(){var q=document.getElementById('q').value.trim(),m=document.g
  else location.href='https://www.google.com/search?q='+e;
  return false}
 try{var sm=localStorage.getItem('vp_mode');if(sm)document.getElementById('mode').value=sm;}catch(e){}
-document.getElementById('mode').onchange=function(){try{localStorage.setItem('vp_mode',this.value)}catch(e){}};
+document.getElementById('mode').onchange=function(){try{localStorage.setItem('vp_mode',this.value)}catch(e){}
+ if(this.value==='finder'){location.href='finder.html';return}
+ if(this.value==='manga'&&!document.getElementById('q').value.trim()){location.href='manga.html';return}
+ document.getElementById('q').focus();};
 </script>
 <div id="c"></div>
 <script>

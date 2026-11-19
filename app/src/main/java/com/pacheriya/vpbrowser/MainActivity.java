@@ -222,6 +222,8 @@ public class MainActivity extends Activity {
     private String readerJs = "";
     private String autoTr = "";
     private String injected = "", defaultUa = "", desktopUa = "", UA_EDGE = "", UA_IE = "", UA_FF = "";
+    private androidx.webkit.WebViewAssetLoader assetLoader;
+    private final java.util.Map<String,String> pdfProxy = new java.util.concurrent.ConcurrentHashMap<String,String>();
     private int uaMode = 0; // 0 default,1 desktop chrome,2 edge,3 IE11,4 firefox
     private static final String[] UA_NAMES = {"Default (mobile)", "Desktop Chrome", "Microsoft Edge", "Internet Explorer 11", "Firefox"};
     private static final java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.ConcurrentHashMap<String, Integer>> ORIGINS = new java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.ConcurrentHashMap<String, Integer>>();
@@ -314,6 +316,7 @@ public class MainActivity extends Activity {
         UA_FF = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0";
         uaMode = sp.getInt("uamode", 0);
 
+        assetLoader = new androidx.webkit.WebViewAssetLoader.Builder().addPathHandler("/assets/", new androidx.webkit.WebViewAssetLoader.AssetsPathHandler(this)).build();
         buildUi();
         setContentView(root);
 
@@ -653,6 +656,14 @@ public class MainActivity extends Activity {
         w.setWebViewClient(new WebViewClient() {
             @Override public WebResourceResponse shouldInterceptRequest(WebView v, WebResourceRequest r) {
                 final String u = r.getUrl().toString();
+                if (u.startsWith("https://appassets.androidplatform.net/")) {
+                    java.util.regex.Matcher pm = java.util.regex.Pattern.compile("/assets/pdfjs/doc-([0-9a-f]+)\\.pdf$").matcher(r.getUrl().getPath());
+                    if (pm.find()) {
+                        String real = pdfProxy.get(pm.group(1));
+                        if (real != null) return fetchPdf(real, t.url, v.getSettings().getUserAgentString());
+                    }
+                    return assetLoader.shouldInterceptRequest(r.getUrl());
+                }
                 if (!r.isForMainFrame() && t.url != null && !(adblock && AdBlock.blocked(u))) noteOrigin(t.url, u);
                 if (adblock && AdBlock.blocked(u)) {
                     return new WebResourceResponse("text/plain", "utf-8", new ByteArrayInputStream(new byte[0]));
@@ -686,6 +697,9 @@ public class MainActivity extends Activity {
                 if (r.isForMainFrame() && "http".equals(sc)) {
                     String up = upgrade(t, r.getUrl().toString());
                     if (!up.equals(r.getUrl().toString())) { v.loadUrl(up); return true; }
+                }
+                if (r.isForMainFrame() && ("http".equals(sc) || "https".equals(sc) || "file".equals(sc)) && isPdf(r.getUrl().toString())) {
+                    v.loadUrl(pdfViewer(r.getUrl().toString())); return true;
                 }
                 if ("http".equals(sc) || "https".equals(sc) || "file".equals(sc) || "about".equals(sc) || "data".equals(sc) || "blob".equals(sc)) return false;
                 if ("magnet".equals(sc) || "mailto".equals(sc) || "tel".equals(sc)) {
@@ -834,6 +848,10 @@ public class MainActivity extends Activity {
         });
         w.setDownloadListener(new DownloadListener() {
             public void onDownloadStart(String url, String ua, String cd, String mime, long len) {
+                if ((mime != null && mime.contains("pdf")) || isPdf(url)) {
+                    if (t == cur) t.wv.loadUrl(pdfViewer(url));
+                    return;
+                }
                 Downloader.direct(MainActivity.this, url, ua, t.url, URLUtil.guessFileName(url, cd, mime));
             }
         });
@@ -966,6 +984,45 @@ public class MainActivity extends Activity {
         if ("brave".equals(engine)) return "https://search.brave.com/search?q=";
         if ("bing".equals(engine)) return "https://www.bing.com/search?q=";
         return "https://www.google.com/search?q=";
+    }
+
+    private WebResourceResponse fetchPdf(String url, String referer, String ua) {
+        try {
+            java.net.HttpURLConnection h = (java.net.HttpURLConnection) new java.net.URL(url).openConnection();
+            h.setInstanceFollowRedirects(true);
+            h.setConnectTimeout(15000);
+            h.setReadTimeout(30000);
+            if (ua != null) h.setRequestProperty("User-Agent", ua);
+            if (referer != null && referer.startsWith("http")) h.setRequestProperty("Referer", referer);
+            String ck = CookieManager.getInstance().getCookie(url);
+            if (ck != null && !ck.isEmpty()) h.setRequestProperty("Cookie", ck);
+            java.util.Map<String,String> hd = new java.util.HashMap<String,String>();
+            hd.put("Access-Control-Allow-Origin", "*");
+            WebResourceResponse resp = new WebResourceResponse("application/pdf", null, h.getInputStream());
+            resp.setResponseHeaders(hd);
+            return resp;
+        } catch (Throwable e) { return null; }
+    }
+
+    private static boolean isPdf(String u) {
+        if (u == null) return false;
+        if (u.startsWith("https://appassets.androidplatform.net/")) return false;
+        String p = u.split("[?#]", 2)[0].toLowerCase();
+        return p.endsWith(".pdf");
+    }
+
+    private String pdfViewer(String u) {
+        try {
+            String id = Integer.toHexString(u.hashCode()) + Long.toHexString(System.nanoTime());
+            String file;
+            if (u.startsWith("file://") || u.startsWith("content://") || u.startsWith("https://appassets.androidplatform.net/")) {
+                file = u;
+            } else {
+                pdfProxy.put(id, u);
+                file = "https://appassets.androidplatform.net/assets/pdfjs/doc-" + id + ".pdf";
+            }
+            return "https://appassets.androidplatform.net/assets/pdfjs/view.html?file=" + java.net.URLEncoder.encode(file, "UTF-8");
+        } catch (Exception e) { return u; }
     }
 
     private String uaFor(int m) {
@@ -1206,6 +1263,7 @@ public class MainActivity extends Activity {
             }).start();
         }
         @JavascriptInterface public void toast(final String s) { ui.post(new Runnable() { public void run() { MainActivity.this.toast(s); } }); }
+        @JavascriptInterface public void dl(final String u) { if (u == null || u.isEmpty()) return; ui.post(new Runnable() { public void run() { Downloader.direct(MainActivity.this, u, t.wv.getSettings().getUserAgentString(), t.url, null); toast("Downloading PDF"); } }); }
         @JavascriptInterface public void trAsync(final int id, final String text, final String tl) {
             new Thread(new Runnable() {
                 public void run() {

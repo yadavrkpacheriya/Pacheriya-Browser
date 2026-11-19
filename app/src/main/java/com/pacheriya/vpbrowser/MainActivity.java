@@ -177,7 +177,7 @@ public class MainActivity extends Activity {
 
     private void hideChrome() {
         if (barsHidden || immersive || inPip || customView != null || cur == null) return;
-        if (urlBox.hasFocus() || cur.url == null || !cur.url.startsWith("http")) { ui.removeCallbacks(hideChromeR); ui.postDelayed(hideChromeR, 3000); return; }
+        if (urlBox.hasFocus() || (cur.panelOpen && dlPanel.getVisibility() == View.VISIBLE) || cur.url == null || !cur.url.startsWith("http")) { ui.removeCallbacks(hideChromeR); ui.postDelayed(hideChromeR, 3000); return; }
         barsHidden = true;
         bar.setVisibility(View.GONE);
         navBar.setVisibility(View.GONE);
@@ -1573,7 +1573,7 @@ public class MainActivity extends Activity {
     private void rebuildPanel() {
         if (dlPanel == null) return;
         final Tab t = cur;
-        if (t == null || inPip || immersive || barsHidden || customView != null) { dlPanel.setVisibility(View.GONE); dlIcon.setVisibility(View.GONE); return; }
+        if (t == null || inPip || immersive || customView != null) { dlPanel.setVisibility(View.GONE); dlIcon.setVisibility(View.GONE); return; }
         int n = visibleOpts(t);
         dlIcon.setVisibility(n > 0 ? View.VISIBLE : View.GONE);
         dlBadge.setText(String.valueOf(n));

@@ -1286,7 +1286,7 @@ public class MainActivity extends Activity {
         customView = null;
         if (customCb != null) { try { customCb.onCustomViewHidden(); } catch (Exception e) { /* ignore */ } }
         customCb = null;
-        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
+        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_USER);
         hideBars(false);
         refreshBadge();
         final Tab zt = cur;
@@ -1855,6 +1855,7 @@ public class MainActivity extends Activity {
     // ---------------- picture-in-picture ----------------
     private void enterPip() {
         try {
+            if (cur != null && customView == null) cur.wv.evaluateJavascript("window.__vpPip&&window.__vpPip(true)", null);
             enterPictureInPictureMode(new PictureInPictureParams.Builder().setAspectRatio(new Rational(16, 9)).build());
         } catch (Throwable e) { toast("Picture-in-picture not available"); }
     }

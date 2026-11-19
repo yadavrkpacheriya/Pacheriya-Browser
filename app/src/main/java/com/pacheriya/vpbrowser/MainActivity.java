@@ -484,10 +484,11 @@ public class MainActivity extends Activity {
         dlPanel = new LinearLayout(this);
         dlPanel.setOrientation(LinearLayout.VERTICAL);
         GradientDrawable dpbg = new GradientDrawable();
-        dpbg.setColor(0xF21B1B22);
-        dpbg.setCornerRadius(dp(14));
+        dpbg.setColor(0xFF23232E);
+        dpbg.setCornerRadius(dp(16));
+        dpbg.setStroke(dp(1), 0x33FFFFFF);
         dlPanel.setBackground(dpbg);
-        dlPanel.setElevation(dp(10));
+        dlPanel.setElevation(dp(18));
         dlPanel.setVisibility(View.GONE);
         dlHead = new TextView(this);
         dlHead.setTextColor(0xFFB9A8FF);
@@ -512,8 +513,8 @@ public class MainActivity extends Activity {
         main.addView(findBar, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         main.addView(pb, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(3)));
         main.addView(content, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
-        FrameLayout.LayoutParams dol = new FrameLayout.LayoutParams((int) (getResources().getDisplayMetrics().widthPixels * 0.72f), ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP | Gravity.END);
-        dol.topMargin = dp(6); dol.rightMargin = dp(6);
+        FrameLayout.LayoutParams dol = new FrameLayout.LayoutParams((int) (getResources().getDisplayMetrics().widthPixels * 0.68f), ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP | Gravity.END);
+        dol.topMargin = dp(10); dol.rightMargin = dp(10);
         content.addView(dlPanel, dol);
         navBar = new LinearLayout(this);
         navBar.setOrientation(LinearLayout.HORIZONTAL);

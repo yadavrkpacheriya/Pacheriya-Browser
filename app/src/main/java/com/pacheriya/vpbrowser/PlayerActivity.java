@@ -35,7 +35,7 @@ public class PlayerActivity extends Activity {
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_USER);
+        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_FULL_USER);
 
         FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(Color.BLACK);

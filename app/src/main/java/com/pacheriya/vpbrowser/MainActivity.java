@@ -41,6 +41,7 @@ import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
+import android.provider.MediaStore;
 import android.webkit.CookieManager;
 import android.webkit.DownloadListener;
 import android.webkit.GeolocationPermissions;

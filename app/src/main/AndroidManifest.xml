@@ -62,7 +62,7 @@
         </provider>
         <activity android:name=".PlayerActivity"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|smallestScreenSize|density|uiMode"
-            android:screenOrientation="user"
+            android:screenOrientation="fullUser"
             android:exported="false" />
     </application>
 </manifest>

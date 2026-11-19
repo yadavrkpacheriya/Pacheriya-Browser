@@ -2,32 +2,43 @@
 <title>Find full video</title>
 <style>
 body{margin:0;background:#111116;color:#eee;font-family:sans-serif;padding:16px 16px 60px}
-h2{margin:16px 0 4px;font-size:20px}h3{margin:20px 0 2px;font-size:16px;color:#c9b3ff}
+h2{margin:16px 0 4px;font-size:20px}
 p{color:#aaa;font-size:13.5px;line-height:1.45}
 .pick{display:block;background:#6a4cff;color:#fff;text-align:center;padding:14px;border-radius:12px;font-size:16px;margin:12px 0}
 .fr{background:#1c1c24;border-radius:12px;padding:10px;margin:12px 0}
 .fr img{width:100%;border-radius:8px;display:block}
 .row{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
 .b{flex:1 1 22%;background:#2a2a36;color:#fff;border:0;border-radius:9px;padding:11px 6px;font-size:13.5px}
-.b.p{background:#3a2d6b}
+.b.p{background:#3a2d6b}.b.best{background:#6a4cff}
 #st{color:#c9b3ff;font-size:14px}
 .find{display:flex;gap:6px;margin:8px 0}
 .find input{flex:1;background:#1c1c24;border:1px solid #333;color:#fff;border-radius:9px;padding:12px;font-size:15px}
 .find button{background:#6a4cff;color:#fff;border:0;border-radius:9px;padding:0 16px;font-size:15px}
 .hr{border:0;border-top:1px solid #2a2a30;margin:22px 0 4px}
+.mem{background:#16161c;border:1px solid #262630;border-radius:10px;padding:10px 12px;margin:10px 0;font-size:13px;color:#bbb}
+.mem a{color:#9a7bff;text-decoration:none}
+.tag{font-size:12px;color:#8a7;}
 </style></head><body>
 <h2>Find the full video</h2>
-<p>Step 1 — pick a short clip (10-30 seconds). The app takes a few still pictures from it and looks them up with picture search, which usually leads to the full video or names the movie.</p>
+<p>Step 1 — pick a short clip (10-30 seconds). The app takes still pictures and the sound from it and looks them up, which usually names the movie or leads to the full video.</p>
 <label class="pick">Choose a clip<input id="f" type="file" accept="video/*" style="display:none"></label>
-<div id="st"></div><div id="out"></div>
+<div id="st"></div><div id="mem"></div><div id="out"></div>
 
 <hr class="hr">
 <h2>Where can I watch it?</h2>
-<p>Step 2 — once you know the name, type it below and check each service. Each button opens that service's own search, so you see straight away if it is there (and whether it is free or paid).</p>
+<p>Step 2 — once you know the name, type it and check each service. Each button opens that service's own search, so you see at once if it is there and whether it is free or paid.</p>
 <div class="find"><input id="q" placeholder="Movie or show name" autocomplete="off"><button id="go">Check</button></div>
 <div id="svc"></div>
+
+<video id="v" muted playsinline style="display:none"></video>
 <script>
 var v=document.getElementById('v'),out=document.getElementById('out'),st=document.getElementById('st');
+var LS=function(k,d){try{return JSON.parse(localStorage.getItem('vpf_'+k))||d}catch(e){return d}};
+var SV_=function(k,x){try{localStorage.setItem('vpf_'+k,JSON.stringify(x))}catch(e){}};
+/* the finder learns which search engine you actually use, and shows that one first and highlighted next time */
+function bump(name){var s=LS('eng',{});s[name]=(s[name]||0)+1;SV_('eng',s)}
+function order(list){var s=LS('eng',{});return list.slice().sort(function(a,b){return (s[b[0]]||0)-(s[a[0]]||0)})}
+
 function post(url,field,blob,extra){var fm=document.createElement('form');fm.method='POST';fm.action=url;fm.enctype='multipart/form-data';fm.style.display='none';
 var i=document.createElement('input');i.type='file';i.name=field;var dt=new DataTransfer();dt.items.add(new File([blob],'frame.jpg',{type:'image/jpeg'}));i.files=dt.files;fm.appendChild(i);
 for(var k in (extra||{})){var h=document.createElement('input');h.type='hidden';h.name=k;h.value=extra[k];fm.appendChild(h)}
@@ -35,25 +46,46 @@ document.body.appendChild(fm);fm.submit()}
 function postB64(url,blob){var r=new FileReader();r.onload=function(){var fm=document.createElement('form');fm.method='POST';fm.action=url;fm.enctype='multipart/form-data';fm.style.display='none';
 var h=document.createElement('input');h.type='hidden';h.name='imageBin';h.value=String(r.result).split(',')[1];fm.appendChild(h);
 var c=document.createElement('input');c.type='hidden';c.name='cbir';c.value='sbi';fm.appendChild(c);document.body.appendChild(fm);fm.submit()};r.readAsDataURL(blob)}
-function card(blob,t){var d=document.createElement('div');d.className='fr';var im=document.createElement('img');im.src=URL.createObjectURL(blob);d.appendChild(im);
+function card(blob){var d=document.createElement('div');d.className='fr';var im=document.createElement('img');im.src=URL.createObjectURL(blob);d.appendChild(im);
 var r=document.createElement('div');r.className='row';
-[['Yandex',function(){post('https://yandex.com/images/search?rpt=imageview','upfile',blob)}],
+var engs=order([
+ ['Yandex',function(){post('https://yandex.com/images/search?rpt=imageview','upfile',blob)}],
  ['Google Lens',function(){post('https://lens.google.com/v3/upload?hl=en','encoded_image',blob)}],
  ['Bing',function(){postB64('https://www.bing.com/images/search?view=detailv2&iss=sbiupload&FORM=SBIHMP',blob)}],
  ['TinEye',function(){post('https://tineye.com/search','image',blob)}]
-].forEach(function(x){var b=document.createElement('button');b.className='b';b.textContent=x[0];b.onclick=x[1];r.appendChild(b)});
+]);
+engs.forEach(function(x,idx){var b=document.createElement('button');b.className='b'+(idx===0?' best':'');b.textContent=x[0];b.onclick=function(){bump(x[0]);x[1]()};r.appendChild(b)});
 d.appendChild(r);out.appendChild(d)}
-function grab(times,i){if(i>=times.length){st.textContent='Done. Tap a search under any picture (Yandex is usually best for films).';return}
+function grab(times,i){if(i>=times.length){st.textContent='Done. Tap a search under any picture (the one shown first is the one you use most).';return}
 v.onseeked=function(){v.onseeked=null;var w=v.videoWidth,h=v.videoHeight;if(!w){grab(times,i+1);return}var s=Math.min(1,1280/Math.max(w,h)),c=document.createElement('canvas');c.width=Math.round(w*s);c.height=Math.round(h*s);
-c.getContext('2d').drawImage(v,0,0,c.width,c.height);c.toBlob(function(b){if(b)card(b,times[i]);grab(times,i+1)},'image/jpeg',0.9)};
+c.getContext('2d').drawImage(v,0,0,c.width,c.height);c.toBlob(function(b){if(b)card(b);grab(times,i+1)},'image/jpeg',0.9)};
 try{v.currentTime=times[i]}catch(e){grab(times,i+1)}}
+
+/* sound search: for AI-edited clips the picture may be fake but the song/score is often the real one */
+function soundCard(){var d=document.createElement('div');d.className='fr';
+var t=document.createElement('p');t.style.margin='2px 0 6px';t.innerHTML='<b>Find by sound</b> — if the video is edited or AI-made, the music or dialogue is often from the real movie.';d.appendChild(t);
+var r=document.createElement('div');r.className='row';
+[['Identify music','https://www.google.com/search?q=what+song+is+this'],
+ ['Hum/sing (Google)','https://www.google.com/search?q=hum+to+search'],
+ ['SoundHound','https://www.soundhound.com/'],
+ ['AHA Music','https://www.aha-music.com/identify-songs-music-recognition-online']
+].forEach(function(x){var b=document.createElement('button');b.className='b p';b.textContent=x[0];b.onclick=function(){location.href=x[1]};r.appendChild(b)});
+d.appendChild(r);
+var n=document.createElement('p');n.style.cssText='margin:8px 0 0;font-size:12px';n.textContent='Tip: on the music tools, tap their mic and play this clip out loud, or play the clip in another app while they listen.';d.appendChild(n);
+out.appendChild(d)}
+
+/* remembers clips you have already identified, so a repeat is instant */
+function remember(name){if(!name)return;var h=LS('solved',[]);h=h.filter(function(x){return x.n!==name});h.unshift({n:name,t:Date.now()});SV_('solved',h.slice(0,30));showMem()}
+function showMem(){var box=document.getElementById('mem');var h=LS('solved',[]);if(!h.length){box.innerHTML='';return}
+box.innerHTML='<div class="mem"><b>Found before</b> (tap to check where to watch):<br>'+h.map(function(x){return '<a href="#" data-n="'+encodeURIComponent(x.n)+'">'+x.n.replace(/</g,'&lt;')+'</a>'}).join(' &nbsp;·&nbsp; ')+'</div>';
+Array.prototype.forEach.call(box.querySelectorAll('a'),function(a){a.onclick=function(e){e.preventDefault();var n=decodeURIComponent(a.dataset.n);document.getElementById('q').value=n;svc(n);document.getElementById('q').scrollIntoView()}})}
+
 document.getElementById('f').onchange=function(){var f=this.files[0];if(!f)return;out.innerHTML='';st.textContent='Reading the clip...';
-v.src=URL.createObjectURL(f);v.onloadedmetadata=function(){var d=isFinite(v.duration)&&v.duration>0?v.duration:10;grab([0.12,0.32,0.52,0.72,0.9].map(function(p){return Math.max(0.1,d*p)}),0)};
+v.src=URL.createObjectURL(f);v.onloadedmetadata=function(){var d=isFinite(v.duration)&&v.duration>0?v.duration:10;soundCard();grab([0.12,0.32,0.52,0.72,0.9].map(function(p){return Math.max(0.1,d*p)}),0)};
 v.onerror=function(){st.textContent='This file could not be read as a video. Try another clip.'}};
 
-/* Step 2: open each service's own search for the typed title */
 var SV=[
- ['JustWatch (all services, free+paid)','https://www.justwatch.com/in/search?q=','p'],
+ ['JustWatch (all services)','https://www.justwatch.com/in/search?q=','p'],
  ['Google','https://www.google.com/search?q=watch+','p'],
  ['YouTube','https://www.youtube.com/results?search_query=','p'],
  ['Prime Video','https://www.primevideo.com/search/?phrase=',''],
@@ -67,10 +99,10 @@ var SV=[
  ['Einthusan','https://einthusan.tv/movie/results/?lang=&query=','']
 ];
 function svc(q){var box=document.getElementById('svc');box.innerHTML='';var r=document.createElement('div');r.className='row';
-SV.forEach(function(x){var b=document.createElement('button');b.className='b'+(x[2]?' p':'');b.textContent=x[0];b.onclick=function(){location.href=x[1]+encodeURIComponent(q)};r.appendChild(b)});
+SV.forEach(function(x){var b=document.createElement('button');b.className='b'+(x[2]?' p':'');b.textContent=x[0];b.onclick=function(){remember(q);location.href=x[1]+encodeURIComponent(q)};r.appendChild(b)});
 box.appendChild(r)}
-document.getElementById('go').onclick=function(){var q=document.getElementById('q').value.trim();if(q)svc(q)};
+document.getElementById('go').onclick=function(){var q=document.getElementById('q').value.trim();if(q){remember(q);svc(q)}};
 document.getElementById('q').addEventListener('keydown',function(e){if(e.key==='Enter')document.getElementById('go').click()});
+showMem();
 </script>
-<video id="v" muted playsinline style="display:none"></video>
 </body></html>

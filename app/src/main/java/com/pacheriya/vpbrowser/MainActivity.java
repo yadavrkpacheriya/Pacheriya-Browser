@@ -1840,26 +1840,24 @@ public class MainActivity extends Activity {
         else if (tabs.size() > 1) closeTab(cur);
     }
 
-    private void menuRow(LinearLayout box, final PopupWindow pop, String icon, String label, final int id, boolean group) {
+    private View menuItem(final PopupWindow pop, String icon, String label, final int id) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(14), dp(13), dp(14), dp(13));
+        row.setPadding(dp(16), dp(13), dp(16), dp(13));
         android.util.TypedValue tvv = new android.util.TypedValue();
         getTheme().resolveAttribute(android.R.attr.selectableItemBackground, tvv, true);
         row.setBackgroundResource(tvv.resourceId);
         TextView ic = new TextView(this);
-        ic.setText(icon); ic.setTextSize(17); ic.setGravity(Gravity.CENTER); ic.setTextColor(0xFFB9A8FF);
+        ic.setText(icon); ic.setTextSize(16); ic.setGravity(Gravity.CENTER); ic.setTextColor(0xFFB9A8FF);
         TextView tx = new TextView(this);
-        tx.setText(label); tx.setTextColor(id == 17 ? 0xFFFF8A80 : Color.WHITE); tx.setTextSize(group ? 13 : 15);
-        if (group) tx.setAllCaps(true);
-        tx.setSingleLine(true);
-        row.addView(ic, new LinearLayout.LayoutParams(dp(34), ViewGroup.LayoutParams.WRAP_CONTENT));
+        tx.setText(label); tx.setTextColor(id == 17 ? 0xFFFF8A80 : Color.WHITE); tx.setTextSize(15); tx.setSingleLine(true);
+        row.addView(ic, new LinearLayout.LayoutParams(dp(30), ViewGroup.LayoutParams.WRAP_CONTENT));
         LinearLayout.LayoutParams txp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        txp.leftMargin = dp(10);
+        txp.leftMargin = dp(12);
         row.addView(tx, txp);
-        box.addView(row, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        if (!group && id != 0) row.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { pop.dismiss(); menuAction(id); } });
+        if (id != 0) row.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { pop.dismiss(); menuAction(id); } });
+        return row;
     }
 
     private void showMenu(View anchor) {
@@ -1868,54 +1866,85 @@ public class MainActivity extends Activity {
         final LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
         GradientDrawable bg = new GradientDrawable();
-        bg.setColor(0xF21E1E26);
-        bg.setCornerRadii(new float[]{dp(16), dp(16), 0, 0, 0, 0, dp(16), dp(16)});
+        bg.setColor(0xF51E1E26);
+        bg.setCornerRadius(dp(16));
         box.setBackground(bg);
-        box.setPadding(dp(6), dp(10), dp(6), dp(10));
+        box.setPadding(dp(6), dp(8), dp(6), dp(8));
         sv.addView(box);
 
         int ph = getResources().getDisplayMetrics().heightPixels;
         int pw = getResources().getDisplayMetrics().widthPixels;
-        final PopupWindow pop = new PopupWindow(sv, (int) (pw * 0.72f), (int) (ph * 0.82f), true);
+        final PopupWindow pop = new PopupWindow(sv, (int) (pw * 0.74f), ViewGroup.LayoutParams.WRAP_CONTENT, true);
         pop.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-        pop.setElevation(dp(12));
+        pop.setElevation(dp(14));
         pop.setAnimationStyle(android.R.style.Animation_Dialog);
 
-        /* top: most-used */
-        menuRow(box, pop, "\u2728", "Assistant", 25, false);
-        menuRow(box, pop, "\uFF0B", "New tab", 1, false);
-        menuRow(box, pop, "\uD83D\uDD12", "New private tab", 2, false);
-        /* THIS PAGE */
-        menuRow(box, pop, "", "This page", 0, true);
-        menuRow(box, pop, "\u27F3", "Reload", 3, false);
-        menuRow(box, pop, bm ? "\u2605" : "\u2606", bm ? "Remove bookmark" : "Add bookmark", 6, false);
-        menuRow(box, pop, "\uD83D\uDD17", "Copy link", 13, false);
-        menuRow(box, pop, "\u21AA", "Share", 14, false);
-        menuRow(box, pop, "\uD83D\uDD0D", "Find in page", 5, false);
-        menuRow(box, pop, "\uD83D\uDCD6", "Reading mode", 19, false);
-        menuRow(box, pop, "\uD83C\uDF10", "Translate page", 11, false);
-        /* LIBRARY */
-        menuRow(box, pop, "", "Library", 0, true);
-        menuRow(box, pop, "\uD83D\uDCD1", "Bookmarks", 7, false);
-        menuRow(box, pop, "\uD83D\uDD53", "History", 8, false);
-        menuRow(box, pop, "\u2B07", "Downloads & videos", 12, false);
-        /* VIDEO & TOOLS */
-        menuRow(box, pop, "", "Video & tools", 0, true);
-        menuRow(box, pop, "\u25B6", "Video Plus panel", 10, false);
-        menuRow(box, pop, "\u25A2", "Float video (PiP)", 9, false);
-        menuRow(box, pop, "\uD83D\uDD0E", "Find full video", 23, false);
-        menuRow(box, pop, "\uD83D\uDCF9", "Camera live view", 24, false);
-        menuRow(box, pop, "\uD83D\uDDBC", picTr ? "Picture translate: ON" : "Picture translate: off", 22, false);
-        menuRow(box, pop, "\u25B6", autoPrev ? "Video previews: ON" : "Video previews: off", 21, false);
-        menuRow(box, pop, "\uD83C\uDF10", autoTr.isEmpty() ? "Auto-translate: off" : "Auto-translate: " + autoTr.toUpperCase(), 20, false);
-        menuRow(box, pop, saver ? "\uD83D\uDCC9" : "\uD83D\uDCCA", saver ? "Data saver: ON" : "Data saver", 18, false);
-        /* bottom */
-        menuRow(box, pop, "", "", 0, true);
-        menuRow(box, pop, "\u2699", "Settings", 15, false);
-        menuRow(box, pop, "\uD83E\uDE7A", "Diagnostics", 26, false);
-        menuRow(box, pop, "\u2715", "Exit", 17, false);
+        /* most-used, always visible */
+        box.addView(menuItem(pop, "\u2728", "Assistant", 25));
+        box.addView(menuItem(pop, "\uFF0B", "New tab", 1));
+        box.addView(menuItem(pop, "\u27F3", "Reload", 3));
+        box.addView(menuItem(pop, bm ? "\u2605" : "\u2606", bm ? "Remove bookmark" : "Add bookmark", 6));
+
+        /* collapsible groups */
+        addGroup(pop, box, "\uD83D\uDCC4", "This page", new Object[][]{
+            {"\uD83D\uDD12", "New private tab", 2}, {"\u21AA", "Share", 14}, {"\uD83D\uDD17", "Copy link", 13},
+            {"\uD83D\uDD0D", "Find in page", 5}, {"\uD83D\uDCD6", "Reading mode", 19}, {"\uD83C\uDF10", "Translate page", 11}
+        });
+        addGroup(pop, box, "\uD83D\uDCDA", "Library", new Object[][]{
+            {"\uD83D\uDCD1", "Bookmarks", 7}, {"\uD83D\uDD53", "History", 8}, {"\u2B07", "Downloads & videos", 12}
+        });
+        addGroup(pop, box, "\u25B6", "Video & tools", new Object[][]{
+            {"\u25B6", "Video Plus panel", 10}, {"\u25A2", "Float video (PiP)", 9}, {"\uD83D\uDD0E", "Find full video", 23},
+            {"\uD83D\uDCF9", "Camera live view", 24}, {"\uD83D\uDDBC", picTr ? "Picture translate: ON" : "Picture translate", 22},
+            {"\u25B6", autoPrev ? "Video previews: ON" : "Video previews", 21},
+            {"\uD83C\uDF10", autoTr.isEmpty() ? "Auto-translate: off" : "Auto-translate: " + autoTr.toUpperCase(), 20},
+            {saver ? "\uD83D\uDCC9" : "\uD83D\uDCCA", saver ? "Data saver: ON" : "Data saver", 18}
+        });
+
+        /* bottom, always visible */
+        View div = new View(this); div.setBackgroundColor(0x22FFFFFF);
+        LinearLayout.LayoutParams dl = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1)); dl.topMargin = dp(4); dl.bottomMargin = dp(4);
+        box.addView(div, dl);
+        box.addView(menuItem(pop, "\u2699", "Settings", 15));
+        box.addView(menuItem(pop, "\uD83E\uDE7A", "Diagnostics", 26));
+        box.addView(menuItem(pop, "\u2715", "Exit", 17));
 
         pop.showAtLocation(root, Gravity.TOP | Gravity.END, dp(4), dp(52));
+    }
+
+    private void addGroup(final PopupWindow pop, final LinearLayout box, String icon, String title, final Object[][] items) {
+        final LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.setPadding(dp(16), dp(13), dp(16), dp(13));
+        android.util.TypedValue tvv = new android.util.TypedValue();
+        getTheme().resolveAttribute(android.R.attr.selectableItemBackground, tvv, true);
+        header.setBackgroundResource(tvv.resourceId);
+        TextView ic = new TextView(this); ic.setText(icon); ic.setTextSize(16); ic.setGravity(Gravity.CENTER); ic.setTextColor(0xFFB9A8FF);
+        TextView tx = new TextView(this); tx.setText(title); tx.setTextColor(0xFFCFCFE0); tx.setTextSize(15); tx.setSingleLine(true);
+        final TextView arrow = new TextView(this); arrow.setText("\u25BE"); arrow.setTextColor(0xFF8A8C93); arrow.setTextSize(13);
+        header.addView(ic, new LinearLayout.LayoutParams(dp(30), ViewGroup.LayoutParams.WRAP_CONTENT));
+        LinearLayout.LayoutParams txp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f); txp.leftMargin = dp(12);
+        header.addView(tx, txp);
+        header.addView(arrow);
+        box.addView(header);
+
+        final LinearLayout sub = new LinearLayout(this);
+        sub.setOrientation(LinearLayout.VERTICAL);
+        sub.setVisibility(View.GONE);
+        for (Object[] it : items) {
+            View row = menuItem(pop, (String) it[0], (String) it[1], (Integer) it[2]);
+            row.setPadding(dp(30), dp(12), dp(16), dp(12));
+            sub.addView(row);
+        }
+        box.addView(sub);
+        header.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                boolean show = sub.getVisibility() != View.VISIBLE;
+                sub.setVisibility(show ? View.VISIBLE : View.GONE);
+                arrow.setText(show ? "\u25B4" : "\u25BE");
+            }
+        });
     }
 
     private void menuAction(int id) {

@@ -1451,6 +1451,33 @@ public class MainActivity extends Activity {
             } catch (Throwable e) { /* ignore */ }
             return arr.toString();
         }
+        /** Returns a small base64 JPEG thumbnail for a video uri (data: URI), or "" if none. Called lazily per row so the list stays fast. */
+        @JavascriptInterface public String thumb(String uriStr) {
+            if (t.url == null || !t.url.startsWith("file:///android_asset/") || uriStr == null) return "";
+            android.graphics.Bitmap bm = null;
+            try {
+                android.net.Uri u = android.net.Uri.parse(uriStr);
+                // API 29+: MediaStore.loadThumbnail is fast (uses cached thumbs when available)
+                if (android.os.Build.VERSION.SDK_INT >= 29) {
+                    try { bm = getContentResolver().loadThumbnail(u, new android.util.Size(320, 180), null); } catch (Throwable ig) {}
+                }
+                if (bm == null) {
+                    android.media.MediaMetadataRetriever r = new android.media.MediaMetadataRetriever();
+                    try {
+                        r.setDataSource(MainActivity.this, u);
+                        bm = r.getFrameAtTime(1000000, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC);
+                    } finally { try { r.release(); } catch (Throwable ig) {} }
+                }
+                if (bm == null) return "";
+                // scale down to keep the data URI small
+                int tw = 320, th = Math.max(1, (int)(bm.getHeight() * (320.0 / Math.max(1, bm.getWidth()))));
+                android.graphics.Bitmap sc = android.graphics.Bitmap.createScaledBitmap(bm, tw, th, true);
+                java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+                sc.compress(android.graphics.Bitmap.CompressFormat.JPEG, 70, bos);
+                if (sc != bm) sc.recycle(); bm.recycle();
+                return "data:image/jpeg;base64," + android.util.Base64.encodeToString(bos.toByteArray(), android.util.Base64.NO_WRAP);
+            } catch (Throwable e) { if (bm != null) try { bm.recycle(); } catch (Throwable ig) {} return ""; }
+        }
         @JavascriptInterface public String savedList(String key) {
             if (t.url == null || !t.url.startsWith("file:///android_asset/")) return "[]";
             if (!"hist".equals(key) && !"bm".equals(key)) return "[]";

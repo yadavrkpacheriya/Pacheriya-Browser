@@ -40,13 +40,17 @@ public class PlayerActivity extends Activity {
         FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(Color.BLACK);
 
-        view = new PlayerView(this);
-        view.setUseController(true);
-        view.setKeepContentOnPlayerReset(true);
+        // Inflate PlayerView from XML so surface_type="texture_view" takes effect (fixes black screen).
+        view = (PlayerView) getLayoutInflater().inflate(R.layout.player_view, root, false);
         view.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         root.addView(view);
 
-        player = new ExoPlayer.Builder(this).build();
+        // TextureView surface avoids the black-screen that SurfaceView shows on many devices/formats (.mkv, odd .mp4).
+        // Full software+hardware decoders with fallback so unusual codecs still render.
+        DefaultRenderersFactory rf = new DefaultRenderersFactory(this)
+                .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF)
+                .setEnableDecoderFallback(true);
+        player = new ExoPlayer.Builder(this, rf).build();
         view.setPlayer(player);
         player.setAudioAttributes(AudioAttributes.DEFAULT, true);
 

@@ -166,8 +166,8 @@ final class AutoQuality {
         synchronized (plain) { if (plain.contains(u)) return null; }
         try {
             HttpURLConnection h = (HttpURLConnection) new URL(u).openConnection();
-            h.setConnectTimeout(10000);
-            h.setReadTimeout(15000);
+            h.setConnectTimeout(5000);
+            h.setReadTimeout(6000);
             Map<String, String> rh = r.getRequestHeaders();
             String origin = null;
             if (rh != null) for (Map.Entry<String, String> e : rh.entrySet()) {
@@ -187,19 +187,17 @@ final class AutoQuality {
             while ((n = in.read(b)) > 0) { bo.write(b, 0, n); if (bo.size() > 3000000) return null; }
             String body = bo.toString("UTF-8");
             String fin = h.getURL().toString();
-            boolean moved = !fin.equals(u);
             boolean master = body.startsWith("#EXTM3U") && body.contains("#EXT-X-STREAM-INF");
-            if (moved && !master) { synchronized (plain) { plain.add(u); } return null; }
+            boolean live = body.contains("#EXT-X-MEDIA-SEQUENCE") || (body.contains("#EXTINF") && !body.contains("#EXT-X-ENDLIST"));
+            /* only the master playlist is trimmed; media/segment/live playlists pass straight through so the
+               app never sits inside the live video stream (that caused constant rebuffering) */
+            if (!master || live) { synchronized (plain) { if (plain.size() > 1000) plain.clear(); plain.add(u); } return null; }
+            boolean moved = !fin.equals(u);
             if (moved) body = absolutize(body, fin);
-            String out = body;
-            if (master) {
-                double m = speed(c);
-                int cap = capHeight(m, saver);
-                out = trim(body, cap);
-                lastInfo = (cap >= 100000 ? "Best quality" : cap + "p max") + " (" + Math.round(m) + " Mbps)";
-            } else {
-                synchronized (plain) { if (plain.size() > 600) plain.clear(); plain.add(u); }
-            }
+            double m = speed(c);
+            int cap = capHeight(m, saver);
+            String out = trim(body, cap);
+            lastInfo = (cap >= 100000 ? "Best quality" : cap + "p max") + " (" + Math.round(m) + " Mbps)";
             Map<String, String> hd = new HashMap<>();
             hd.put("Access-Control-Allow-Origin", origin != null ? origin : "*");
             if (origin != null) hd.put("Access-Control-Allow-Credentials", "true");

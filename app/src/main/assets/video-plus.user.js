@@ -14,7 +14,7 @@
   if (window.__vplus) return;
   window.__vplus = 1;
 
-  var S = { auto: true, sharp: 0, ct: 1, sat: 1, warm: 0, br: 1, gest: true, theater: false, autofs: true, autorot: true, adblock: true, boost: true, rate: 1, gain: 1, hdx: false, shp: 0.7, model: 'base', asub: true };
+  var S = { auto: true, sharp: 0, ct: 1, sat: 1, warm: 0, br: 1, gest: true, theater: false, autofs: true, autorot: true, adblock: true, boost: true, rate: 1, gain: 1, hdx: false, shp: 0.7, model: 'base', asub: true, aspect: 0 };
   var hdMap = new WeakMap();
   try { Object.assign(S, JSON.parse(localStorage.getItem('vplus2') || '{}')); } catch (e) {}
   var save = function () { try { localStorage.setItem('vplus2', JSON.stringify(S)); } catch (e) {} };
@@ -466,7 +466,7 @@
     h += '<div><span style="opacity:.7;margin-right:4px">Speed</span>';
     [0.5, 1, 1.25, 1.5, 2, 3, 4].forEach(function (r) { h += '<button data-s="' + r + '" class="' + ((S.rate || 1) === r ? 'on' : '') + '">' + r + 'x</button>'; });
     h += '</div>';
-    h += '<div><button id="vp-loud" class="' + (S.gain > 1 ? 'on' : '') + '">Loud audio (3x)</button><button id="vp-hd" class="' + (S.hdx === true ? 'on' : '') + '">HD boost (sharpen)</button><button id="vp-fl">Fullscreen + landscape</button><button id="vp-th" class="' + (S.theater ? 'on' : '') + '">Theater dim</button><button id="vp-ge" class="' + (S.gest ? 'on' : '') + '">Swipe gestures</button><button id="vp-bo" class="' + (S.boost !== false ? 'on' : '') + '">Load booster</button><button id="vp-ab" class="' + (S.adblock !== false ? 'on' : '') + '">Block ads</button><button id="vp-af" class="' + (S.autofs ? 'on' : '') + '">Auto fullscreen on play</button><button id="vp-ar" class="' + (S.autorot ? 'on' : '') + '">Auto landscape</button><button id="vp-pip">Mini player (in page)</button><button id="vp-bg">Float over apps (PiP)</button><button id="vp-lp">Loop</button><button id="vp-as" class="' + (S.asub !== false ? 'on' : '') + '">Subtitles always on</button><button id="vp-ai" class="' + (sub ? 'on' : '') + '">Auto English subtitles</button><button id="vp-md">AI model: ' + ({ tiny: 'Fast', base: 'Better', small: 'Best (slow)' }[S.model || 'base']) + '</button><button id="vp-ss">Save subtitles (.srt)</button><button id="vp-srt">Load subtitles (.srt)</button><button id="vp-lc">All apps: Live Caption (subtitles)</button><button id="vp-sa">All apps: Sound Amplifier (loud)</button><button id="vp-x">Close</button></div>';
+    h += '<div><button id="vp-loud" class="' + (S.gain > 1 ? 'on' : '') + '">Loud audio (3x)</button><button id="vp-hd" class="' + (S.hdx === true ? 'on' : '') + '">HD boost (sharpen)</button><button id="vp-fl">Fullscreen + landscape</button><button id="vp-asp">Aspect: fit</button><button id="vp-th" class="' + (S.theater ? 'on' : '') + '">Theater dim</button><button id="vp-ge" class="' + (S.gest ? 'on' : '') + '">Swipe gestures</button><button id="vp-bo" class="' + (S.boost !== false ? 'on' : '') + '">Load booster</button><button id="vp-ab" class="' + (S.adblock !== false ? 'on' : '') + '">Block ads</button><button id="vp-af" class="' + (S.autofs ? 'on' : '') + '">Auto fullscreen on play</button><button id="vp-ar" class="' + (S.autorot ? 'on' : '') + '">Auto landscape</button><button id="vp-pip">Mini player (in page)</button><button id="vp-bg">Float over apps (PiP)</button><button id="vp-lp">Loop</button><button id="vp-as" class="' + (S.asub !== false ? 'on' : '') + '">Subtitles always on</button><button id="vp-ai" class="' + (sub ? 'on' : '') + '">Auto English subtitles</button><button id="vp-md">AI model: ' + ({ tiny: 'Fast', base: 'Better', small: 'Best (slow)' }[S.model || 'base']) + '</button><button id="vp-ss">Save subtitles (.srt)</button><button id="vp-srt">Load subtitles (.srt)</button><button id="vp-lc">All apps: Live Caption (subtitles)</button><button id="vp-sa">All apps: Sound Amplifier (loud)</button><button id="vp-x">Close</button></div>';
     panel.innerHTML = h; var se = $('#vp-st'); if (se) se.textContent = statText();
     panel.querySelectorAll('[data-p]').forEach(function (b) { b.onclick = function () { Object.assign(S, PRE[b.dataset.p]); applyLook(); build(); panel.classList.add('on'); }; });
     panel.querySelectorAll('[data-sh]').forEach(function (i) { i.oninput = function () { S.shp = parseFloat(i.value); save(); }; });
@@ -507,6 +507,32 @@
     $('#vp-ab').onclick = function () { S.adblock = !(S.adblock !== false); save(); this.classList.toggle('on', S.adblock); say('Ad block ' + (S.adblock ? 'on' : 'off') + ' - reload page'); };
     $('#vp-af').onclick = function () { S.autofs = !S.autofs; save(); this.classList.toggle('on', S.autofs); };
     $('#vp-ar').onclick = function () { S.autorot = !S.autorot; save(); this.classList.toggle('on', S.autorot); };
+    var ASPECTS = [
+      ['fit',     function (v) { v.style.objectFit = 'contain'; v.style.transform = ''; }],
+      ['fill',    function (v) { v.style.objectFit = 'cover'; v.style.transform = ''; }],
+      ['stretch', function (v) { v.style.objectFit = 'fill'; v.style.transform = ''; }],
+      ['16:9',    function (v) { ratio(v, 16/9); }],
+      ['4:3',     function (v) { ratio(v, 4/3); }],
+      ['18:9',    function (v) { ratio(v, 18/9); }],
+      ['20:9',    function (v) { ratio(v, 20/9); }],
+      ['21:9',    function (v) { ratio(v, 21/9); }]
+    ];
+    function ratio(v, want) {
+      v.style.objectFit = 'fill';
+      var r = v.getBoundingClientRect(); if (!r.width || !r.height) { v.style.transform = ''; return; }
+      var cur = r.width / r.height, sx = 1, sy = 1;
+      if (want > cur) sy = cur / want; else sx = want / cur;
+      v.style.transform = 'scale(' + sx + ',' + sy + ')';
+    }
+    function applyAspect(v) { if (!v) return; try { v.style.transformOrigin = 'center center'; ASPECTS[(S.aspect || 0) % ASPECTS.length][1](v); } catch (e) {} }
+    window.__vpAspect = applyAspect;
+    $('#vp-asp').onclick = function () {
+      S.aspect = ((S.aspect || 0) + 1) % ASPECTS.length; save();
+      var v = target(); applyAspect(v);
+      this.textContent = 'Aspect: ' + ASPECTS[S.aspect][0];
+      say('Aspect: ' + ASPECTS[S.aspect][0]);
+    };
+    (function () { var b = $('#vp-asp'); if (b) b.textContent = 'Aspect: ' + ASPECTS[(S.aspect || 0) % ASPECTS.length][0]; var v = target(); if (v && S.aspect) applyAspect(v); })();
     $('#vp-fl').onclick = function () { var v = target(); if (!v) { say('No video found'); return; } var box = playerBox(v), fn = box.requestFullscreen || box.webkitRequestFullscreen || box.mozRequestFullScreen; panel.classList.remove('on'); try { var pr = fn.call(box); if (pr && pr.catch) pr.catch(function () { say('Fullscreen blocked'); }); } catch (e) { say('Fullscreen blocked'); } };
     $('#vp-pip').onclick = function () { var v = target(); panel.classList.remove('on'); if (mini) { miniOff(); return; } if (!v) { say('No video found'); return; } miniOn(v); };
     $('#vp-bg').onclick = function () {
@@ -657,6 +683,7 @@
     try { if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').then(done, done); else done(); } catch (e) { done(); }
   }
   document.addEventListener('fullscreenchange', function () {
+    setTimeout(function () { try { if (window.__vpAspect && S.aspect) window.__vpAspect(target()); } catch (e) {} }, 300);
     var fe = document.fullscreenElement;
     if (fe && fe.tagName !== 'VIDEO') fe.appendChild(root); else document.documentElement.appendChild(root);
     if (fe) { if (S.autorot) lockLand(); }
@@ -723,7 +750,8 @@
     }, 3000);
   }, true);
   document.addEventListener('play', function (e) { if (e.target instanceof HTMLVideoElement && !isPrev(e.target) && e.target.getBoundingClientRect().width > 200) showBar(e.target, 3000); }, true);
-  document.addEventListener('fullscreenchange', function () { var v = barV || target(); if (v) setTimeout(function () { showBar(v, 3500); }, 500); });
+  document.addEventListener('fullscreenchange', function () {
+    setTimeout(function () { try { if (window.__vpAspect && S.aspect) window.__vpAspect(target()); } catch (e) {} }, 300); var v = barV || target(); if (v) setTimeout(function () { showBar(v, 3500); }, 500); });
 
   /* ---------- gestures (work even if the site covers the video with its own layers) ---------- */
   var g = null, lastTap = 0, lastX = 0;

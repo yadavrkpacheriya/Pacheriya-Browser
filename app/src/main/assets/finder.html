@@ -20,7 +20,7 @@ p{color:#aaa;font-size:13.5px;line-height:1.45}
 .tag{font-size:12px;color:#8a7;}
 </style></head><body>
 <h2>Find the full video</h2>
-<p>Step 1 — pick a short clip (10-30 seconds). The app takes still pictures and the sound from it and looks them up, which usually names the movie or leads to the full video on YouTube, Instagram and other sites.</p>
+<p>Step 1 — pick the clip (10-30 seconds). The app takes a few still pictures from it. Tap a search under any picture and it searches that frame by itself (no uploading again) to name the movie or find the full video.</p>
 <label class="pick">Choose a clip<input id="f" type="file" accept="video/*" style="display:none"></label>
 <div id="st"></div><div id="nameh"></div><div id="mem"></div><div id="out"></div>
 
@@ -42,24 +42,53 @@ var SV_=function(k,x){try{localStorage.setItem('vpf_'+k,JSON.stringify(x))}catch
 function bump(name){var s=LS('eng',{});s[name]=(s[name]||0)+1;SV_('eng',s)}
 function order(list){var s=LS('eng',{});return list.slice().sort(function(a,b){return (s[b[0]]||0)-(s[a[0]]||0)})}
 
-function post(url,field,blob,extra){var fm=document.createElement('form');fm.method='POST';fm.action=url;fm.enctype='multipart/form-data';fm.style.display='none';
-var i=document.createElement('input');i.type='file';i.name=field;var dt=new DataTransfer();dt.items.add(new File([blob],'frame.jpg',{type:'image/jpeg'}));i.files=dt.files;fm.appendChild(i);
-for(var k in (extra||{})){var h=document.createElement('input');h.type='hidden';h.name=k;h.value=extra[k];fm.appendChild(h)}
-document.body.appendChild(fm);fm.submit()}
-function postB64(url,blob){var r=new FileReader();r.onload=function(){var fm=document.createElement('form');fm.method='POST';fm.action=url;fm.enctype='multipart/form-data';fm.style.display='none';
-var h=document.createElement('input');h.type='hidden';h.name='imageBin';h.value=String(r.result).split(',')[1];fm.appendChild(h);
-var c=document.createElement('input');c.type='hidden';c.name='cbir';c.value='sbi';fm.appendChild(c);document.body.appendChild(fm);fm.submit()};r.readAsDataURL(blob)}
-function card(blob){var d=document.createElement('div');d.className='fr';var im=document.createElement('img');im.src=URL.createObjectURL(blob);d.appendChild(im);
-var r=document.createElement('div');r.className='row';
-var engs=order([
- ['Yandex',function(){post('https://yandex.com/images/search?rpt=imageview','upfile',blob)}],
- ['Google Lens',function(){post('https://lens.google.com/v3/upload?hl=en','encoded_image',blob)}],
- ['Bing',function(){postB64('https://www.bing.com/images/search?view=detailv2&iss=sbiupload&FORM=SBIHMP',blob)}],
- ['TinEye',function(){post('https://tineye.com/search','image',blob)}]
-]);
-engs.forEach(function(x,idx){var b=document.createElement('button');b.className='b'+(idx===0?' best':'');b.textContent=x[0];b.onclick=function(){bump(x[0]);x[1]()};r.appendChild(b)});
-d.appendChild(r);out.appendChild(d)}
-function grab(times,i){if(i>=times.length){st.textContent='Done. Tap a search under any picture (the one shown first is the one you use most).';return}
+/* Reverse image search needs a real image URL. The app uploads the frame to a temporary
+   image host, then opens the search engine with that URL so it searches on its own. */
+var HOSTS=[
+ {n:'catbox',url:'https://catbox.moe/user/api.php',form:function(b){var fd=new FormData();fd.append('reqtype','fileupload');fd.append('fileToUpload',new File([b],'f.jpg',{type:'image/jpeg'}));return fd;},parse:function(t){return t.trim().indexOf('http')===0?t.trim():''}},
+ {n:'uguu',url:'https://uguu.se/upload.php',form:function(b){var fd=new FormData();fd.append('files[]',new File([b],'f.jpg',{type:'image/jpeg'}));return fd;},parse:function(t){try{return JSON.parse(t).files[0].url}catch(e){return ''}}},
+ {n:'tmpfiles',url:'https://tmpfiles.org/api/v1/upload',form:function(b){var fd=new FormData();fd.append('file',new File([b],'f.jpg',{type:'image/jpeg'}));return fd;},parse:function(t){try{var u=JSON.parse(t).data.url;return u.replace('tmpfiles.org/','tmpfiles.org/dl/')}catch(e){return ''}}}
+];
+function uploadFrame(blob,cb){
+ var i=0;
+ (function tryHost(){
+   if(i>=HOSTS.length){cb('');return;}
+   var h=HOSTS[i++];
+   fetch(h.url,{method:'POST',body:h.form(blob)}).then(function(r){return r.text()}).then(function(t){
+     var u=h.parse(t); if(u&&/^https?:/.test(u))cb(u); else tryHost();
+   }).catch(tryHost);
+ })();
+}
+var ENG=[
+ ['Google Lens',function(u){return 'https://lens.google.com/uploadbyurl?url='+encodeURIComponent(u)}],
+ ['Yandex',function(u){return 'https://yandex.com/images/search?rpt=imageview&url='+encodeURIComponent(u)}],
+ ['Bing',function(u){return 'https://www.bing.com/images/search?view=detailv2&iss=sbi&q=imgurl:'+encodeURIComponent(u)+'&FORM=IRSBIQ'}],
+ ['TinEye',function(u){return 'https://tineye.com/search?url='+encodeURIComponent(u)}],
+ ['Web (image)',function(u){return 'https://www.google.com/searchbyimage?image_url='+encodeURIComponent(u)+'&hl=en'}]
+];
+function card(blob){
+ var d=document.createElement('div');d.className='fr';
+ var im=document.createElement('img');im.src=URL.createObjectURL(blob);d.appendChild(im);
+ var msg=document.createElement('div');msg.style.cssText='font-size:12.5px;color:#9a7bff;margin:8px 0 4px';d.appendChild(msg);
+ var r=document.createElement('div');r.className='row';
+ var engs=order(ENG), btns=[];
+ var urlCache='';
+ function run(name,mk){
+   bump(name);
+   if(urlCache){ location.href=mk(urlCache); return; }
+   msg.textContent='Uploading this picture, then searching…';
+   btns.forEach(function(b){b.disabled=true});
+   uploadFrame(blob,function(u){
+     btns.forEach(function(b){b.disabled=false});
+     if(!u){msg.textContent='Upload failed on this network — try another picture, or tap again.';return;}
+     urlCache=u; location.href=mk(u);
+   });
+ }
+ engs.forEach(function(x,idx){var b=document.createElement('button');b.className='b'+(idx===0?' best':'');b.textContent=x[0];b.onclick=function(){run(x[0],x[1])};btns.push(b);r.appendChild(b)});
+ d.appendChild(r);out.appendChild(d);
+}
+
+function grab(times,i){if(i>=times.length){st.textContent='Done. Tap one search under any picture — it uploads that frame and searches by itself.';return}
 v.onseeked=function(){v.onseeked=null;var w=v.videoWidth,h=v.videoHeight;if(!w){grab(times,i+1);return}var s=Math.min(1,1280/Math.max(w,h)),c=document.createElement('canvas');c.width=Math.round(w*s);c.height=Math.round(h*s);
 c.getContext('2d').drawImage(v,0,0,c.width,c.height);c.toBlob(function(b){if(b)card(b);grab(times,i+1)},'image/jpeg',0.9)};
 try{v.currentTime=times[i]}catch(e){grab(times,i+1)}}

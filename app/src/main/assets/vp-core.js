@@ -9,14 +9,19 @@
         (document.head || document.documentElement).appendChild(l);
       });
     }
-    document.addEventListener('touchstart', function (e) {
-      var a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
-      if (!a || a.__vpPf) return;
-      var h = a.href; if (!/^https?:/.test(h) || h === location.href) return;
-      a.__vpPf = 1;
-      var l = document.createElement('link'); l.rel = 'prefetch'; l.href = h;
-      (document.head || document.documentElement).appendChild(l);
-    }, { passive: true, capture: true });
+    /* preconnect to the hosts this page's own resources use, so images/scripts start without a fresh handshake */
+    function warm(h){ if(!h||warm.s[h])return; warm.s[h]=1; var l=document.createElement('link'); l.rel='preconnect'; l.href=h; (document.head||document.documentElement).appendChild(l); }
+    warm.s={};
+    if (window === window.top) {
+      try {
+        var seen=0;
+        document.querySelectorAll('script[src],link[href],img[src]').forEach(function(n){ if(seen>12)return; var u=n.src||n.href; try{ var o=new URL(u,location.href); if(o.origin!==location.origin){ warm(o.origin); seen++; } }catch(e){} });
+      } catch(e){}
+    }
+    /* touch or hover a link: start fetching it before the tap completes */
+    function pf(a){ if(!a||a.__vpPf)return; var h=a.href; if(!/^https?:/.test(h)||h===location.href)return; a.__vpPf=1; var l=document.createElement('link'); l.rel='prefetch'; l.href=h; (document.head||document.documentElement).appendChild(l); }
+    document.addEventListener('touchstart', function (e) { var a=e.target&&e.target.closest?e.target.closest('a[href]'):null; pf(a); }, { passive: true, capture: true });
+    document.addEventListener('mouseover', function (e) { var a=e.target&&e.target.closest?e.target.closest('a[href]'):null; pf(a); }, { passive: true, capture: true });
   } catch (e) {}
   /* 0b. video previews on touch screens: the thumbnail nearest the middle of the screen plays its preview, like a mouse hover would */
   try {

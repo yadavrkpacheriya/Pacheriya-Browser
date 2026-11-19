@@ -108,7 +108,7 @@ public class MainActivity extends Activity {
     private LinearLayout main, bar;
     private EditText urlBox;
     private TextView tabBtn, dlHead;
-    private LinearLayout dlPanel, dlList, navBar;
+    private LinearLayout dlPanel, dlList, navBar, dlOverlay;
     private FrameLayout dlIcon;
     private TextView dlBadge;
     private android.widget.ScrollView dlScroll;
@@ -476,7 +476,11 @@ public class MainActivity extends Activity {
 
         dlPanel = new LinearLayout(this);
         dlPanel.setOrientation(LinearLayout.VERTICAL);
-        dlPanel.setBackgroundColor(0xFF1B1B22);
+        GradientDrawable dpbg = new GradientDrawable();
+        dpbg.setColor(0xF21B1B22);
+        dpbg.setCornerRadius(dp(14));
+        dlPanel.setBackground(dpbg);
+        dlPanel.setElevation(dp(10));
         dlPanel.setVisibility(View.GONE);
         dlHead = new TextView(this);
         dlHead.setTextColor(0xFFB9A8FF);
@@ -496,11 +500,14 @@ public class MainActivity extends Activity {
         dlPanel.addView(dlScroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         content = new FrameLayout(this);
+        dlOverlay = dlPanel;
         main.addView(bar, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         main.addView(findBar, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        main.addView(dlPanel, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         main.addView(pb, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(3)));
         main.addView(content, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        FrameLayout.LayoutParams dol = new FrameLayout.LayoutParams((int) (getResources().getDisplayMetrics().widthPixels * 0.72f), ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP | Gravity.END);
+        dol.topMargin = dp(6); dol.rightMargin = dp(6);
+        content.addView(dlPanel, dol);
         navBar = new LinearLayout(this);
         navBar.setOrientation(LinearLayout.HORIZONTAL);
         navBar.setBackgroundColor(0xFF1B1B22);
@@ -1558,40 +1565,60 @@ public class MainActivity extends Activity {
 
     private void showMenu(View anchor) {
         boolean bm = cur != null && Store.isBookmarked(sp, cur.url);
-        final int[] ids = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24};
-        final String[] labels = {"New tab", "Private tab", "Reload", "Forward", "Find in page", bm ? "Unbookmark" : "Bookmark",
-            "Bookmarks", "History", "Float video", "Video Plus", "Translate", "Downloads", "Copy link", "Share", "Settings", "Update", "Exit", saver ? "Saver: ON" : "Data saver", "Reading mode", autoTr.isEmpty() ? "Auto-translate: off" : "Auto: " + autoTr.toUpperCase(), autoPrev ? "Preview: ON" : "Preview: off", picTr ? "Picture translate: ON" : "Picture translate: off", "Find full video", "Camera live view (RTSP)"};
+        final int[] ids = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 19, 20, 21, 22, 23, 24, 17};
+        final String[] icons = {"\uFF0B", "\uD83D\uDD12", "\u27F3", "\u203A", "\uD83D\uDD0D", bm ? "\u2605" : "\u2606",
+            "\uD83D\uDCD1", "\uD83D\uDD53", "\u25A2", "\u25B6", "\uD83C\uDF10", "\u2B07", "\uD83D\uDD17", "\u21AA", "\u2699", "\u21BB",
+            saver ? "\uD83D\uDCC9" : "\uD83D\uDCCA", "\uD83D\uDCD6", "\uD83C\uDF10", "\u25B6", "\uD83D\uDDBC", "\uD83D\uDD0E", "\uD83D\uDCF9", "\u2715"};
+        final String[] labels = {"New tab", "Private tab", "Reload", "Forward", "Find in page", bm ? "Remove bookmark" : "Add bookmark",
+            "Bookmarks", "History", "Float video (PiP)", "Video Plus", "Translate page", "Downloads", "Copy link", "Share", "Settings", "Update",
+            saver ? "Data saver: ON" : "Data saver", "Reading mode", autoTr.isEmpty() ? "Auto-translate: off" : "Auto-translate: " + autoTr.toUpperCase(), autoPrev ? "Video previews: ON" : "Video previews: off", picTr ? "Picture translate: ON" : "Picture translate: off", "Find full video", "Camera live view", "Exit"};
+
+        android.widget.ScrollView sv = new android.widget.ScrollView(this);
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
         GradientDrawable bg = new GradientDrawable();
-        bg.setColor(0xFF24242B);
-        bg.setCornerRadius(dp(14));
+        bg.setColor(0xF21E1E26);
+        bg.setCornerRadii(new float[]{dp(16), dp(16), 0, 0, 0, 0, dp(16), dp(16)});
         box.setBackground(bg);
-        box.setPadding(dp(6), dp(6), dp(6), dp(6));
-        final PopupWindow pop = new PopupWindow(box, (int) (getResources().getDisplayMetrics().widthPixels * 0.94f), ViewGroup.LayoutParams.WRAP_CONTENT, true);
+        box.setPadding(dp(6), dp(10), dp(6), dp(10));
+        sv.addView(box);
+
+        int ph = getResources().getDisplayMetrics().heightPixels;
+        int pw = getResources().getDisplayMetrics().widthPixels;
+        final PopupWindow pop = new PopupWindow(sv, (int) (pw * 0.66f), (int) (ph * 0.82f), true);
         pop.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-        pop.setElevation(dp(8));
-        for (int i = 0; i < ids.length; i += 3) {
+        pop.setElevation(dp(12));
+        pop.setAnimationStyle(android.R.style.Animation_Dialog);
+
+        for (int i = 0; i < ids.length; i++) {
+            final int id = ids[i];
             LinearLayout row = new LinearLayout(this);
             row.setOrientation(LinearLayout.HORIZONTAL);
-            for (int c = 0; c < 3; c++) {
-                TextView tv = new TextView(this);
-                tv.setGravity(Gravity.CENTER);
-                tv.setTextColor(Color.WHITE);
-                tv.setTextSize(13);
-                tv.setSingleLine(true);
-                if (i + c < ids.length) {
-                    final int id = ids[i + c];
-                    tv.setText(labels[i + c]);
-                    tv.setOnClickListener(new View.OnClickListener() {
-                        public void onClick(View v) { pop.dismiss(); menuAction(id); }
-                    });
-                }
-                row.addView(tv, new LinearLayout.LayoutParams(0, dp(44), 1f));
-            }
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(dp(14), dp(13), dp(14), dp(13));
+            android.util.TypedValue tvv = new android.util.TypedValue();
+            getTheme().resolveAttribute(android.R.attr.selectableItemBackground, tvv, true);
+            row.setBackgroundResource(tvv.resourceId);
+            TextView ic = new TextView(this);
+            ic.setText(icons[i]);
+            ic.setTextSize(17);
+            ic.setGravity(Gravity.CENTER);
+            ic.setTextColor(0xFFB9A8FF);
+            TextView tx = new TextView(this);
+            tx.setText(labels[i]);
+            tx.setTextColor(id == 17 ? 0xFFFF8A80 : Color.WHITE);
+            tx.setTextSize(15);
+            tx.setSingleLine(true);
+            row.addView(ic, new LinearLayout.LayoutParams(dp(34), ViewGroup.LayoutParams.WRAP_CONTENT));
+            LinearLayout.LayoutParams txp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+            txp.leftMargin = dp(10);
+            row.addView(tx, txp);
+            row.setOnClickListener(new View.OnClickListener() {
+                public void onClick(View v) { pop.dismiss(); menuAction(id); }
+            });
             box.addView(row, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         }
-        pop.showAsDropDown(anchor, 0, 0, Gravity.END);
+        pop.showAtLocation(root, Gravity.TOP | Gravity.END, dp(4), dp(52));
     }
 
     private void menuAction(int id) {

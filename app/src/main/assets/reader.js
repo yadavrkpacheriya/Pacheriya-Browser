@@ -58,10 +58,13 @@
     return sc > 200 ? top : null;
   }
   function nextUrl(doc, base) {
-    var c = doc.querySelector('link[rel~=next][href], a[rel~=next][href]'), i, as;
+    /* common next-chapter ids/classes used by novel sites (novelfull: #next_chap, etc.) */
+    var c = doc.querySelector('#next_chap[href], a#next[href], a.next_chapter[href], a[rel~=next][href], link[rel~=next][href], a[class*=next-chap][href], a[id*=next][href]'), i, as;
     if (!c) { as = doc.querySelectorAll('a[href]');
       for (i = 0; i < as.length && !c; i++) { var t = txt(as[i]).replace(/\s+/g, ' ').trim(); if (t.length < 26 && /^(next|next (page|chapter|part|post|episode)|older posts?|next ?[›»>→]+|[›»→])$/i.test(t)) c = as[i]; }
-      for (i = 0; i < as.length && !c; i++) { if (/(^|[\s_-])next([\s_-]|$)/i.test((as[i].className || '') + ' ' + (as[i].id || ''))) c = as[i]; } }
+      for (i = 0; i < as.length && !c; i++) { if (/(^|[\s_-])next([\s_-]|$)/i.test((as[i].className || '') + ' ' + (as[i].id || '')) && !/disabled/i.test(as[i].className || '')) c = as[i]; }
+      /* icon-only next button: an <a> whose only text is a > arrow or that holds a right-chevron icon */
+      for (i = 0; i < as.length && !c; i++) { var tt = txt(as[i]).trim(); var cl = (as[i].className || '') + (as[i].querySelector && as[i].querySelector('i') ? as[i].querySelector('i').className : ''); if ((/^[>›»→]$/.test(tt) || /fa-(angle|chevron|arrow)-right|next/i.test(cl)) && as[i].getAttribute('href')) c = as[i]; } }
     if (!c) return '';
     try { var u = new URL(c.getAttribute('href'), base); if (u.origin !== location.origin || !/^https?:$/.test(u.protocol)) return ''; u.hash = ''; var cu = new URL(base); cu.hash = ''; return u.href === cu.href ? '' : u.href; } catch (e) { return ''; }
   }

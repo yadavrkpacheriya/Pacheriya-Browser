@@ -531,10 +531,11 @@
     $('#vp-ab').onclick = function () { S.adblock = !(S.adblock !== false); save(); this.classList.toggle('on', S.adblock); say('Ad block ' + (S.adblock ? 'on' : 'off') + ' - reload page'); };
     $('#vp-af').onclick = function () { S.autofs = !S.autofs; save(); this.classList.toggle('on', S.autofs); };
     $('#vp-ar').onclick = function () { S.autorot = !S.autorot; save(); this.classList.toggle('on', S.autorot); };
+    function setFit(v, f) { try { v.style.setProperty('object-fit', f, 'important'); v.style.setProperty('transform', 'none', 'important'); } catch (e) {} }
     var ASPECTS = [
-      ['fit',     function (v) { v.style.objectFit = 'contain'; v.style.transform = ''; }],
-      ['fill',    function (v) { v.style.objectFit = 'cover'; v.style.transform = ''; }],
-      ['stretch', function (v) { v.style.objectFit = 'fill'; v.style.transform = ''; }],
+      ['fit',     function (v) { setFit(v, 'contain'); }],
+      ['fill',    function (v) { setFit(v, 'cover'); }],
+      ['stretch', function (v) { setFit(v, 'fill'); }],
       ['16:9',    function (v) { ratio(v, 16/9); }],
       ['4:3',     function (v) { ratio(v, 4/3); }],
       ['18:9',    function (v) { ratio(v, 18/9); }],
@@ -542,13 +543,13 @@
       ['21:9',    function (v) { ratio(v, 21/9); }]
     ];
     function ratio(v, want) {
-      v.style.objectFit = 'fill';
-      var r = v.getBoundingClientRect(); if (!r.width || !r.height) { v.style.transform = ''; return; }
+      try { v.style.setProperty('object-fit', 'fill', 'important'); } catch (e) {}
+      var r = v.getBoundingClientRect(); if (!r.width || !r.height) { try { v.style.setProperty('transform', 'none', 'important'); } catch (e) {} return; }
       var cur = r.width / r.height, sx = 1, sy = 1;
       if (want > cur) sy = cur / want; else sx = want / cur;
-      v.style.transform = 'scale(' + sx + ',' + sy + ')';
+      try { v.style.setProperty('transform', 'scale(' + sx + ',' + sy + ')', 'important'); } catch (e) {}
     }
-    function applyAspect(v) { if (!v) return; try { v.style.transformOrigin = 'center center'; ASPECTS[(S.aspect || 0) % ASPECTS.length][1](v); } catch (e) {} }
+    function applyAspect(v) { if (!v) return; try { v.style.setProperty('transform-origin', 'center center', 'important'); ASPECTS[(S.aspect || 0) % ASPECTS.length][1](v); } catch (e) {} }
     window.__vpAspect = applyAspect;
     $('#vp-asp').onclick = function () {
       S.aspect = ((S.aspect || 0) + 1) % ASPECTS.length; save();

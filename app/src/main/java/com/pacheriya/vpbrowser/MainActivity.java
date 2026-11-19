@@ -652,6 +652,7 @@ public class MainActivity extends Activity {
         w.setOnScrollChangeListener(new View.OnScrollChangeListener() {
             public void onScrollChange(View v, int x, int y, int ox, int oy) {
                 if (barsHidden && oy - y > dp(14)) showChrome();
+                if (t.swipe != null) t.swipe.setEnabled(y == 0);
             }
         });
         if (t.incognito && WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE)) {

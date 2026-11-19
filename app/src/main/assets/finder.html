@@ -1,0 +1,43 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Find full video</title>
+<style>
+body{margin:0;background:#111116;color:#eee;font-family:sans-serif;padding:16px}
+h2{margin:6px 0 4px;font-size:20px}p{color:#aaa;font-size:14px;line-height:1.45}
+.pick{display:block;background:#6a4cff;color:#fff;text-align:center;padding:14px;border-radius:12px;font-size:16px;margin:14px 0}
+.fr{background:#1c1c24;border-radius:12px;padding:10px;margin:12px 0}
+.fr img{width:100%;border-radius:8px;display:block}
+.row{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+.b{flex:1;background:#2a2a36;color:#fff;border:0;border-radius:9px;padding:11px 6px;font-size:14px}
+#st{color:#c9b3ff;font-size:14px}
+</style></head><body>
+<h2>Find the full video</h2>
+<p>Pick a short clip (10-30 seconds) from your phone. The app takes a few still pictures from it and looks them up with picture search, which usually leads to the page of the full video.</p>
+<label class="pick">Choose a clip<input id="f" type="file" accept="video/*" style="display:none"></label>
+<div id="st"></div><div id="out"></div>
+<p>Tips: try each picture, and try more than one search. Pictures showing a clear scene, a logo or on-screen text work best. Results open in this tab; press Back to return here.</p>
+<video id="v" muted playsinline style="display:none"></video>
+<script>
+var v=document.getElementById('v'),out=document.getElementById('out'),st=document.getElementById('st');
+function post(url,field,blob,extra){var fm=document.createElement('form');fm.method='POST';fm.action=url;fm.enctype='multipart/form-data';fm.style.display='none';
+var i=document.createElement('input');i.type='file';i.name=field;var dt=new DataTransfer();dt.items.add(new File([blob],'frame.jpg',{type:'image/jpeg'}));i.files=dt.files;fm.appendChild(i);
+for(var k in (extra||{})){var h=document.createElement('input');h.type='hidden';h.name=k;h.value=extra[k];fm.appendChild(h)}
+document.body.appendChild(fm);fm.submit()}
+function postB64(url,blob){var r=new FileReader();r.onload=function(){var fm=document.createElement('form');fm.method='POST';fm.action=url;fm.enctype='multipart/form-data';fm.style.display='none';
+var h=document.createElement('input');h.type='hidden';h.name='imageBin';h.value=String(r.result).split(',')[1];fm.appendChild(h);
+var c=document.createElement('input');c.type='hidden';c.name='cbir';c.value='sbi';fm.appendChild(c);document.body.appendChild(fm);fm.submit()};r.readAsDataURL(blob)}
+function card(blob,t){var d=document.createElement('div');d.className='fr';var im=document.createElement('img');im.src=URL.createObjectURL(blob);d.appendChild(im);
+var r=document.createElement('div');r.className='row';
+[['Google Lens',function(){post('https://lens.google.com/v3/upload?hl=en','encoded_image',blob)}],
+ ['Yandex',function(){post('https://yandex.com/images/search?rpt=imageview','upfile',blob)}],
+ ['Bing',function(){postB64('https://www.bing.com/images/search?view=detailv2&iss=sbiupload&FORM=SBIHMP',blob)}],
+ ['TinEye',function(){post('https://tineye.com/search','image',blob)}]
+].forEach(function(x){var b=document.createElement('button');b.className='b';b.textContent=x[0];b.onclick=x[1];r.appendChild(b)});
+d.appendChild(r);out.appendChild(d)}
+function grab(times,i){if(i>=times.length){st.textContent='Done. Tap a search under any picture.';return}
+v.onseeked=function(){v.onseeked=null;var w=v.videoWidth,h=v.videoHeight;if(!w){grab(times,i+1);return}var s=Math.min(1,1280/Math.max(w,h)),c=document.createElement('canvas');c.width=Math.round(w*s);c.height=Math.round(h*s);
+c.getContext('2d').drawImage(v,0,0,c.width,c.height);c.toBlob(function(b){if(b)card(b,times[i]);grab(times,i+1)},'image/jpeg',0.9)};
+try{v.currentTime=times[i]}catch(e){grab(times,i+1)}}
+document.getElementById('f').onchange=function(){var f=this.files[0];if(!f)return;out.innerHTML='';st.textContent='Reading the clip...';
+v.src=URL.createObjectURL(f);v.onloadedmetadata=function(){var d=isFinite(v.duration)&&v.duration>0?v.duration:10;grab([0.12,0.32,0.52,0.72,0.9].map(function(p){return Math.max(0.1,d*p)}),0)};
+v.onerror=function(){st.textContent='This file could not be read as a video. Try another clip.'}};
+</script></body></html>

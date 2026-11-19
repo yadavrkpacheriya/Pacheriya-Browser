@@ -142,6 +142,55 @@ final class Downloader {
         } catch (Throwable e) { return false; }
     }
 
+    /** Remux a raw .ts (transport stream) into a standard .mp4 using Android's own MediaMuxer (no FFmpeg). */
+    private static boolean remuxToMp4(Context ctx, java.io.File ts, String fn) {
+        android.media.MediaExtractor ex = new android.media.MediaExtractor();
+        android.media.MediaMuxer mux = null;
+        java.io.File outFile = null;
+        try {
+            ex.setDataSource(ts.getAbsolutePath());
+            int tracks = ex.getTrackCount();
+            if (tracks == 0) return false;
+            java.io.File dir = new java.io.File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "VideoPlus");
+            dir.mkdirs();
+            outFile = new java.io.File(dir, fn + ".mp4");
+            mux = new android.media.MediaMuxer(outFile.getAbsolutePath(), android.media.MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
+            int[] map = new int[tracks];
+            long maxBuf = 1024 * 1024;
+            for (int i = 0; i < tracks; i++) {
+                android.media.MediaFormat f = ex.getTrackFormat(i);
+                String mime = f.getString(android.media.MediaFormat.KEY_MIME);
+                if (mime != null && (mime.startsWith("video/") || mime.startsWith("audio/"))) {
+                    ex.selectTrack(i);
+                    map[i] = mux.addTrack(f);
+                    if (f.containsKey(android.media.MediaFormat.KEY_MAX_INPUT_SIZE)) maxBuf = Math.max(maxBuf, f.getInteger(android.media.MediaFormat.KEY_MAX_INPUT_SIZE));
+                } else { map[i] = -1; }
+            }
+            mux.start();
+            java.nio.ByteBuffer buf = java.nio.ByteBuffer.allocate((int) maxBuf);
+            android.media.MediaCodec.BufferInfo info = new android.media.MediaCodec.BufferInfo();
+            while (true) {
+                int tk = ex.getSampleTrackIndex();
+                if (tk < 0) break;
+                int sz = ex.readSampleData(buf, 0);
+                if (sz < 0) break;
+                info.offset = 0; info.size = sz; info.presentationTimeUs = ex.getSampleTime();
+                info.flags = (ex.getSampleFlags() & android.media.MediaExtractor.SAMPLE_FLAG_SYNC) != 0 ? android.media.MediaCodec.BUFFER_FLAG_KEY_FRAME : 0;
+                if (map[tk] >= 0) mux.writeSampleData(map[tk], buf, info);
+                ex.advance();
+            }
+            mux.stop();
+            try { android.media.MediaScannerConnection.scanFile(ctx, new String[]{ outFile.getAbsolutePath() }, null, null); } catch (Throwable e) {}
+            return true;
+        } catch (Throwable e) {
+            if (outFile != null) try { outFile.delete(); } catch (Throwable x) {}
+            return false;
+        } finally {
+            try { ex.release(); } catch (Throwable e) {}
+            if (mux != null) try { mux.release(); } catch (Throwable e) {}
+        }
+    }
+
     // ---------- HLS ----------
     private static HttpURLConnection open(String u, String ua, String ref) throws Exception {
         HttpURLConnection h = (HttpURLConnection) new URL(u).openConnection();
@@ -312,13 +361,8 @@ final class Downloader {
                     if (segs.isEmpty()) throw new Exception("no video parts found");
                     String fn = title.replaceAll("[^A-Za-z0-9 _.()-]", "_");
                     if (fn.length() > 70) fn = fn.substring(0, 70);
-                    ContentValues cv = new ContentValues();
-                    cv.put(MediaStore.MediaColumns.DISPLAY_NAME, fn + ".ts");
-                    cv.put(MediaStore.MediaColumns.MIME_TYPE, "video/mp2t");
-                    cv.put(MediaStore.MediaColumns.RELATIVE_PATH, "Download/VideoPlus");
-                    Uri uri = ctx.getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, cv);
-                    if (uri == null) throw new Exception("cannot create file");
-                    OutputStream os = ctx.getContentResolver().openOutputStream(uri);
+                    java.io.File tmp = new java.io.File(ctx.getCacheDir(), "dl_" + System.nanoTime() + ".ts");
+                    OutputStream os = new java.io.FileOutputStream(tmp);
                     final int total = segs.size();
                     final java.util.concurrent.ConcurrentHashMap<String, byte[]> keys = new java.util.concurrent.ConcurrentHashMap<String, byte[]>();
                     java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(32);
@@ -347,10 +391,26 @@ final class Downloader {
                         }
                     } finally { pool.shutdownNow(); }
                     os.close();
+                    Notification muxing = new Notification.Builder(ctx, "dl").setSmallIcon(android.R.drawable.stat_sys_download)
+                        .setContentTitle(fn).setContentText("Converting to MP4...").setProgress(0, 0, true).setOngoing(true).build();
+                    nm.notify(id, muxing);
+                    boolean mp4ok = remuxToMp4(ctx, tmp, fn);
+                    String savedAs;
+                    if (mp4ok) { tmp.delete(); savedAs = fn + ".mp4"; }
+                    else {
+                        // keep the raw .ts if remux failed
+                        ContentValues cv = new ContentValues();
+                        cv.put(MediaStore.MediaColumns.DISPLAY_NAME, fn + ".ts");
+                        cv.put(MediaStore.MediaColumns.MIME_TYPE, "video/mp2t");
+                        cv.put(MediaStore.MediaColumns.RELATIVE_PATH, "Download/VideoPlus");
+                        Uri u2 = ctx.getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, cv);
+                        if (u2 != null) { OutputStream o2 = ctx.getContentResolver().openOutputStream(u2); java.io.FileInputStream fis = new java.io.FileInputStream(tmp); byte[] bb = new byte[65536]; int rn; while ((rn = fis.read(bb)) > 0) o2.write(bb, 0, rn); fis.close(); o2.close(); }
+                        tmp.delete(); savedAs = fn + ".ts";
+                    }
                     Notification done = new Notification.Builder(ctx, "dl").setSmallIcon(android.R.drawable.stat_sys_download_done)
-                        .setContentTitle(fn).setContentText("Saved in Downloads/VideoPlus (.ts file - play with VLC or MX Player)").build();
+                        .setContentTitle(fn).setContentText("Saved in Downloads/VideoPlus (" + savedAs + ")").setAutoCancel(true).build();
                     nm.notify(id, done);
-                    toast(ctx, "Saved: Downloads/VideoPlus/" + fn + ".ts");
+                    toast(ctx, "Saved: " + savedAs);
                 } catch (Exception e) {
                     Notification err = new Notification.Builder(ctx, "dl").setSmallIcon(android.R.drawable.stat_notify_error)
                         .setContentTitle("Download failed").setContentText(String.valueOf(e.getMessage())).build();

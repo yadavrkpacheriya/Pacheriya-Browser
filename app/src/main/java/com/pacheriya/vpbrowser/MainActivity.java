@@ -1691,7 +1691,15 @@ public class MainActivity extends Activity {
             try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(q))); } catch (Exception e) { toast("No torrent app installed"); }
             return;
         }
-        else if (!q.contains(" ") && q.contains(".")) url = "https://" + q;
+        else if (!q.contains(" ") && q.contains(".")) {
+            /* local network addresses (cameras, routers, NAS) usually speak plain http, not https */
+            String hostpart = q.split("[/:?#]", 2)[0];
+            boolean local = hostpart.matches("(10|127)\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}")
+                || hostpart.matches("192\\.168\\.\\d{1,3}\\.\\d{1,3}")
+                || hostpart.matches("172\\.(1[6-9]|2\\d|3[01])\\.\\d{1,3}\\.\\d{1,3}")
+                || hostpart.endsWith(".local") || hostpart.equals("localhost");
+            url = (local ? "http://" : "https://") + q;
+        }
         else url = searchBase() + Uri.encode(q);
         final String hh = hostOf(url);
         if (hh != null) new Thread(new Runnable() { public void run() { try { java.net.InetAddress.getAllByName(hh); } catch (Exception e) { /* ignore */ } } }).start();

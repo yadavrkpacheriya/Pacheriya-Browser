@@ -99,6 +99,7 @@ public class MainActivity extends Activity {
         int gen, pending, uaMode = -1; // -1 = follow global
         long loadStart;
         String altScheme;
+        androidx.swiperefreshlayout.widget.SwipeRefreshLayout swipe;
         boolean panelOpen, autoShown;
     }
 
@@ -173,7 +174,6 @@ public class MainActivity extends Activity {
         if (handle != null) handle.setVisibility(View.GONE);
         refreshBadge();
         ui.removeCallbacks(hideChromeR);
-        ui.postDelayed(hideChromeR, 3000);
     }
 
     private void hideChrome() {
@@ -556,7 +556,6 @@ public class MainActivity extends Activity {
         hlp.bottomMargin = dp(12);
         root.addView(handle, hlp);
         root.addView(fsHost, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        ui.postDelayed(hideChromeR, 3000);
     }
 
     private TextView iconBtn(String t) {
@@ -597,11 +596,22 @@ public class MainActivity extends Activity {
     }
 
     private void select(Tab t) {
-        if (cur != null && cur.wv.getParent() == content) content.removeView(cur.wv);
+        if (cur != null && cur.swipe != null && cur.swipe.getParent() == content) content.removeView(cur.swipe);
         cur = t;
         if (immersive) setReadMode(false); else if (bar != null && navBar != null) showChrome();
-        if (t.wv.getParent() != null) ((ViewGroup) t.wv.getParent()).removeView(t.wv);
-        content.addView(t.wv, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        if (t.swipe == null) {
+            final Tab ft = t;
+            t.swipe = new androidx.swiperefreshlayout.widget.SwipeRefreshLayout(this);
+            t.swipe.setColorSchemeColors(0xFF6A4CFF);
+            t.swipe.setProgressBackgroundColorSchemeColor(0xFF1E1E26);
+            if (t.wv.getParent() != null) ((ViewGroup) t.wv.getParent()).removeView(t.wv);
+            t.swipe.addView(t.wv, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+            t.swipe.setOnRefreshListener(new androidx.swiperefreshlayout.widget.SwipeRefreshLayout.OnRefreshListener() {
+                public void onRefresh() { ft.wv.reload(); ui.postDelayed(new Runnable() { public void run() { if (ft.swipe != null) ft.swipe.setRefreshing(false); } }, 1200); }
+            });
+        }
+        if (t.swipe.getParent() != null) ((ViewGroup) t.swipe.getParent()).removeView(t.swipe);
+        content.addView(t.swipe, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         urlBox.setText(t.url.startsWith("file:") ? "" : t.url);
         bar.setBackgroundColor(t.incognito ? 0xFF2D2147 : 0xFF1B1B1F);
         tabBtn.setText(String.valueOf(tabs.size()));
@@ -642,7 +652,6 @@ public class MainActivity extends Activity {
         w.setOnScrollChangeListener(new View.OnScrollChangeListener() {
             public void onScrollChange(View v, int x, int y, int ox, int oy) {
                 if (barsHidden && oy - y > dp(14)) showChrome();
-                else if (!barsHidden && y - oy > dp(6)) { ui.removeCallbacks(hideChromeR); ui.postDelayed(hideChromeR, 600); }
             }
         });
         if (t.incognito && WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE)) {

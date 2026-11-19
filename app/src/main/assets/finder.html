@@ -20,12 +20,8 @@ p{color:#aaa;font-size:13.5px;line-height:1.45}
 .tag{font-size:12px;color:#8a7;}
 </style></head><body>
 <h2>Find the full video</h2>
-<p>Step 1 — pick the clip (10-30 seconds). The app picks the clearest frame from it, uploads it, and opens the reverse-image search automatically to name the movie or find the full video. Use the dropdown to choose which search engine.</p>
-<div style="display:flex;gap:8px;align-items:center;max-width:560px;margin:0 auto 10px">
-<label class="pick" style="flex:1;margin:0">Choose a clip<input id="f" type="file" accept="video/*" style="display:none"></label>
-<select id="eng" style="background:#2a2a3a;color:#c9b3ff;border:0;border-radius:12px;padding:12px;font-size:14px">
-<option value="Google Lens">Google Lens</option><option value="Yandex">Yandex</option><option value="Bing">Bing</option><option value="TinEye">TinEye</option></select>
-</div>
+<p>Pick the clip (10-30 seconds). The app reads any name on screen, picks the clearest frame, and searches automatically to find the movie or the full video. If the first search finds nothing, tap “search another engine” or “try a different frame” below.</p>
+<label class="pick">Choose the clip &amp; find it<input id="f" type="file" accept="video/*" style="display:none"></label>
 <div id="again"></div>
 <div id="clues"></div>
 <div class="mem" style="margin-top:10px">
@@ -51,10 +47,8 @@ var LS=function(k,d){try{return JSON.parse(localStorage.getItem('vpf_'+k))||d}ca
 var SV_=function(k,x){try{localStorage.setItem('vpf_'+k,JSON.stringify(x))}catch(e){}};
 /* the finder learns which search engine you actually use, and shows that one first and highlighted next time */
 function bump(name){var s=LS('eng',{});s[name]=(s[name]||0)+1;SV_('eng',s)}
-function order(list){var pick=null;try{pick=document.getElementById('eng')&&document.getElementById('eng').value}catch(e){}
- var s=LS('eng',{});var l=list.slice().sort(function(a,b){return (s[b[0]]||0)-(s[a[0]]||0)});
- if(pick){l.sort(function(a,b){return (b[0]===pick?1:0)-(a[0]===pick?1:0)});}
- return l;}
+function order(list){var s=LS('eng',{});var l=list.slice().sort(function(a,b){return (s[b[0]]||0)-(s[a[0]]||0)});
+ l.sort(function(a,b){return (b[0]==='Google Lens'?1:0)-(a[0]==='Google Lens'?1:0)});return l;}
 
 /* Reverse image search needs a real image URL. The app uploads the frame to a temporary
    image host, then opens the search engine with that URL so it searches on its own. */
@@ -163,7 +157,7 @@ function pickDone(){
 /* upload the best frame once, then open the chosen reverse-image engine straight on its results */
 function autoSearch(blob,tryEng){
  var engs=order(ENG), e=engs[tryEng%engs.length];
- st.innerHTML='Uploading the best frame, then opening '+e[0]+'…';
+ st.innerHTML='Finding your video with '+e[0]+'…';
  uploadFrame(blob,function(u){
    if(!u||u.indexOf('ERR:')===0){st.innerHTML='Snap search could not upload'+(u&&u.indexOf('ERR:')===0?' ('+u.slice(4)+')':'')+'. Use “find by name” below, or <a href="#" id="rt" style="color:#9a7bff">retry</a>.';var rt=document.getElementById('rt');if(rt)rt.onclick=function(ev){ev.preventDefault();autoSearch(blob,tryEng)};return;}
    lastUrl=u; bump(e[0]); location.href=e[1](u);

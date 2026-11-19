@@ -125,8 +125,10 @@ document.getElementById('file').onchange=function(){
    if(!text){b.innerHTML='I couldn\'t read any text from this '+kind+'. For a photo, make sure the words are clear; for a scan, it may have no selectable text.';return;}
    attached={name:f.name,text:text};
    var short=text.length>500?text.slice(0,500)+'…':text;
-   b.innerHTML='<b>Read from '+esc(f.name)+':</b>\n'+esc(short)+'\n\n<div class="sug">Now ask a question about it, or <a href="#" id="sr">search this text on the web</a>.</div>';
-   var sr=b.querySelector('#sr');if(sr)sr.onclick=function(e){e.preventDefault();ask(text.slice(0,120))};
+   var extra=(kind==='video'||kind==='image')?'<div class="sug"><a href="#" id="ff">🎬 find the full movie/video</a></div>':'';
+   b.innerHTML='<b>Read from '+esc(f.name)+':</b>\n'+esc(short||'(no text found)')+'\n\n<div class="sug">Ask about it, or <a href="#" id="sr">search this on the web</a>.</div>'+extra;
+   var sr=b.querySelector('#sr');if(sr)sr.onclick=function(e){e.preventDefault();ask((text||f.name).slice(0,120))};
+   var ff=b.querySelector('#ff');if(ff)ff.onclick=function(e){e.preventDefault();location.href='finder.html';};
  }
  if(type.indexOf('video')===0){ videoText(f).then(function(t){finish(t,'video')}); }
  else if(type.indexOf('image')===0){ imgText(f).then(function(t){finish(t,'image')}); }
@@ -169,7 +171,7 @@ document.getElementById('send').onclick=function(){ask(qEl.value)};
 qEl.addEventListener('keydown',function(e){if(e.key==='Enter')ask(qEl.value)});
 document.getElementById('clr').onclick=function(){feed.innerHTML='';greet()};
 document.getElementById('notes').onclick=function(){var ns=notes();bubble('ai',ns.length?('<b>Your notes ('+ns.length+')</b>\n'+esc(ns.join('\n'))):'No notes yet. Type "note: ..." to add one.');};
-function greet(){bubble('ai','Hi! Ask me anything and I\'ll search the web and read the top pages for you.\n\n• Type "note: ..." to teach me a fact — I check your notes first.\n• I learn which sites you open and rank them higher over time.');}
+function greet(){bubble('ai','Hi! Ask me anything, paste a link, or attach a photo, video, PDF or file.\n\n• Attach a video to find the full movie it came from.\n• Type "note: ..." to teach me a fact — I check your notes first.\n• I learn which sites you open and get better over time.');}
 greet();
 </script>
 </body></html>

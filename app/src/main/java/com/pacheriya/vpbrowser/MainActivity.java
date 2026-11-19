@@ -702,7 +702,7 @@ public class MainActivity extends Activity {
                     v.loadUrl(pdfViewer(r.getUrl().toString())); return true;
                 }
                 if ("http".equals(sc) || "https".equals(sc) || "file".equals(sc) || "about".equals(sc) || "data".equals(sc) || "blob".equals(sc)) return false;
-                return openExternal(v, u, sc);
+                return openExternal(v, r.getUrl().toString(), sc);
             }
 
             @Override public void onPageStarted(WebView v, String u, Bitmap f) {

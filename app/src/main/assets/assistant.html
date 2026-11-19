@@ -18,7 +18,7 @@ footer{padding:8px;background:#17171e;display:flex;gap:8px}
 </style></head><body>
 <header><span>&#10024; Assistant</span><span class="sp"></span><button id="notes">My notes</button><button id="clr">Clear</button></header>
 <div id="feed"></div>
-<footer><label id="att" style="background:#2a2a36;color:#c9b3ff;border-radius:50%;width:46px;height:46px;flex:none;display:flex;align-items:center;justify-content:center;font-size:22px">+<input id="file" type="file" accept="image/*,application/pdf,text/*,.txt,.csv,.md" style="display:none"></label><input id="q" placeholder="Ask, add a note, or attach a file" autocomplete="off"><button id="send">&#10148;</button></footer>
+<footer><label id="att" style="background:#2a2a36;color:#c9b3ff;border-radius:50%;width:46px;height:46px;flex:none;display:flex;align-items:center;justify-content:center;font-size:22px">+<input id="file" type="file" accept="image/*,video/*,application/pdf,text/*,.txt,.csv,.md" style="display:none"></label><input id="q" placeholder="Ask, paste a link, add a note, or attach" autocomplete="off"><button id="send">&#10148;</button></footer>
 <script>
 var feed=document.getElementById('feed'),qEl=document.getElementById('q');
 var LS=function(k,d){try{return JSON.parse(localStorage.getItem('as_'+k))||d}catch(e){return d}};
@@ -81,8 +81,21 @@ function answer(q){
  });
 }
 
+function isLink(q){return /^https?:\/\/\S+$/i.test(q)||/^(www\.|instagram\.com|youtu)/i.test(q)}
 function ask(q){
  q=q.trim();if(!q)return;
+ if(isLink(q)){
+   var url=/^https?:/i.test(q)?q:'https://'+q;
+   bubble('me',esc(q));qEl.value='';
+   var b=bubble('ai','<span class="dots">Opening the link</span>');
+   webfetch(url).then(function(t){
+     if(t&&t.length>60){var lines=t.split('\n').map(function(l){return l.trim()}).filter(function(l){return l.length>30});var sum=lines.slice(0,5).join(' ');if(sum.length>700)sum=sum.slice(0,700)+'…';
+       b.innerHTML='<b>From the page:</b>\n'+esc(sum)+'\n\n<div class="sug"><a href="'+url+'">open it in the browser</a></div>';}
+     else{b.innerHTML='I couldn\'t read that page here (sites like Instagram block it). <a href="'+url+'">Open it in the browser</a> instead.';}
+     feed.scrollTop=feed.scrollHeight;
+   });
+   return;
+ }
  if(attached){
    var ql=q.toLowerCase(),txt=attached.text,hit='';
    var idx=txt.toLowerCase().indexOf(ql.split(/\s+/)[0]||'');
@@ -115,10 +128,28 @@ document.getElementById('file').onchange=function(){
    b.innerHTML='<b>Read from '+esc(f.name)+':</b>\n'+esc(short)+'\n\n<div class="sug">Now ask a question about it, or <a href="#" id="sr">search this text on the web</a>.</div>';
    var sr=b.querySelector('#sr');if(sr)sr.onclick=function(e){e.preventDefault();ask(text.slice(0,120))};
  }
- if(type.indexOf('image')===0){ imgText(f).then(function(t){finish(t,'image')}); }
+ if(type.indexOf('video')===0){ videoText(f).then(function(t){finish(t,'video')}); }
+ else if(type.indexOf('image')===0){ imgText(f).then(function(t){finish(t,'image')}); }
  else if(type==='application/pdf'||/\.pdf$/i.test(f.name)){ readPdf(f).then(function(t){finish(t,'PDF')}); }
  else { var r=new FileReader();r.onload=function(){finish(String(r.result),'file')};r.onerror=function(){finish('','file')};r.readAsText(f); }
 };
+/* read on-screen text from a video by grabbing a few frames and OCR-ing them */
+function videoText(f){return new Promise(function(res){
+ var v=document.createElement('video');v.muted=true;v.playsInline=true;v.src=URL.createObjectURL(f);
+ v.onloadedmetadata=function(){
+   var d=isFinite(v.duration)&&v.duration>0?v.duration:8, pts=[0.1,0.3,0.5,0.7,0.9].map(function(p){return Math.max(0.1,d*p)}), i=0, all=[];
+   function grab(){ if(i>=pts.length){res(all.join('\n'));return;}
+     v.onseeked=function(){v.onseeked=null;var w=v.videoWidth,h=v.videoHeight;if(!w){i++;grab();return;}
+       var sc=Math.min(1,1280/Math.max(w,h)),c=document.createElement('canvas');c.width=Math.round(w*sc);c.height=Math.round(h*sc);
+       c.getContext('2d').drawImage(v,0,0,c.width,c.height);
+       c.toBlob(function(b){ if(b)imgText(b).then(function(t){if(t)all.push(t);i++;grab();}); else {i++;grab();} },'image/jpeg',0.9);
+     };
+     try{v.currentTime=pts[i]}catch(e){i++;grab();}
+   }
+   grab();
+ };
+ v.onerror=function(){res('')};
+});}
 /* read PDF text with the bundled pdf.js */
 function readPdf(f){return new Promise(function(res){
  import('./pdfjs/pdf.min.mjs').then(function(pdfjsLib){

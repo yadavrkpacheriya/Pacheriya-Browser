@@ -18,7 +18,7 @@ footer{padding:8px;background:#17171e;display:flex;gap:8px}
 </style></head><body>
 <header><span>&#10024; Assistant</span><span class="sp"></span><button id="notes">My notes</button><button id="clr">Clear</button></header>
 <div id="feed"></div>
-<footer><input id="q" placeholder="Ask anything, or add a note" autocomplete="off"><button id="send">&#10148;</button></footer>
+<footer><label id="att" style="background:#2a2a36;color:#c9b3ff;border-radius:50%;width:46px;height:46px;flex:none;display:flex;align-items:center;justify-content:center;font-size:22px">+<input id="file" type="file" accept="image/*,application/pdf,text/*,.txt,.csv,.md" style="display:none"></label><input id="q" placeholder="Ask, add a note, or attach a file" autocomplete="off"><button id="send">&#10148;</button></footer>
 <script>
 var feed=document.getElementById('feed'),qEl=document.getElementById('q');
 var LS=function(k,d){try{return JSON.parse(localStorage.getItem('as_'+k))||d}catch(e){return d}};
@@ -83,6 +83,14 @@ function answer(q){
 
 function ask(q){
  q=q.trim();if(!q)return;
+ if(attached){
+   var ql=q.toLowerCase(),txt=attached.text,hit='';
+   var idx=txt.toLowerCase().indexOf(ql.split(/\s+/)[0]||'');
+   if(idx>=0)hit=txt.slice(Math.max(0,idx-120),idx+360);
+   bubble('me',esc(q));
+   bubble('ai',(hit?'<b>From '+esc(attached.name)+':</b>\n'+esc(hit)+'\n\n':'')+'Searching the web too…');
+   qEl.value='';answer(q);return;
+ }
  /* a note: "note: ..." or "remember ..." saves to your notes */
  var nm=q.match(/^(note|remember|save)[:\s-]+(.+)/i);
  if(nm){var ns=notes();ns.unshift(nm[2].trim());SV('notes',ns.slice(0,200));bubble('me',esc(q));bubble('ai','Saved to your notes. I\'ll check it first next time.');qEl.value='';return;}
@@ -90,6 +98,42 @@ function ask(q){
  var h=LS('hist',[]);h.unshift(q);SV('hist',h.slice(0,100));
  qEl.value='';answer(q);
 }
+window.__vpTxt=function(id,t){var f=txtCbs[id];delete txtCbs[id];if(f)f(t||'')};
+var txtCbs={},txtN=0;
+function imgText(blob){return new Promise(function(res){ if(!(window.VPApp&&VPApp.frameText)){res('');return;} var r=new FileReader();r.onload=function(){var id=++txtN;txtCbs[id]=res;try{VPApp.frameText(id,String(r.result).split(',')[1])}catch(e){res('')}};r.onerror=function(){res('')};r.readAsDataURL(blob);});}
+var attached=null;
+document.getElementById('file').onchange=function(){
+ var f=this.files[0];if(!f)return;this.value='';
+ bubble('me','\uD83D\uDCCE '+esc(f.name));
+ var b=bubble('ai','<span class="dots">Reading the file</span>');
+ var type=f.type||'';
+ function finish(text,kind){
+   text=(text||'').trim();
+   if(!text){b.innerHTML='I couldn\'t read any text from this '+kind+'. For a photo, make sure the words are clear; for a scan, it may have no selectable text.';return;}
+   attached={name:f.name,text:text};
+   var short=text.length>500?text.slice(0,500)+'…':text;
+   b.innerHTML='<b>Read from '+esc(f.name)+':</b>\n'+esc(short)+'\n\n<div class="sug">Now ask a question about it, or <a href="#" id="sr">search this text on the web</a>.</div>';
+   var sr=b.querySelector('#sr');if(sr)sr.onclick=function(e){e.preventDefault();ask(text.slice(0,120))};
+ }
+ if(type.indexOf('image')===0){ imgText(f).then(function(t){finish(t,'image')}); }
+ else if(type==='application/pdf'||/\.pdf$/i.test(f.name)){ readPdf(f).then(function(t){finish(t,'PDF')}); }
+ else { var r=new FileReader();r.onload=function(){finish(String(r.result),'file')};r.onerror=function(){finish('','file')};r.readAsText(f); }
+};
+/* read PDF text with the bundled pdf.js */
+function readPdf(f){return new Promise(function(res){
+ import('./pdfjs/pdf.min.mjs').then(function(pdfjsLib){
+   pdfjsLib.GlobalWorkerOptions.workerSrc='./pdfjs/pdf.worker.min.mjs';
+   var r=new FileReader();r.onload=function(){
+     pdfjsLib.getDocument({data:new Uint8Array(r.result)}).promise.then(function(doc){
+       var pages=Math.min(doc.numPages,20),acc='',i=0;
+       function nxt(){ if(i>=pages){res(acc);return;} doc.getPage(i+1).then(function(p){return p.getTextContent()}).then(function(tc){acc+=tc.items.map(function(it){return it.str}).join(' ')+'\n';i++;nxt();}); }
+       nxt();
+     }).catch(function(){res('')});
+   };r.onerror=function(){res('')};r.readAsArrayBuffer(f);
+ }).catch(function(){res('')});
+});}
+/* when a file is attached, a question searches within its text first */
+var _ask=null;
 document.getElementById('send').onclick=function(){ask(qEl.value)};
 qEl.addEventListener('keydown',function(e){if(e.key==='Enter')ask(qEl.value)});
 document.getElementById('clr').onclick=function(){feed.innerHTML='';greet()};

@@ -27,7 +27,7 @@ function load(){
  arr.forEach(function(f){
   var d=document.createElement('div');d.className='it';
   d.innerHTML='<div class="nm"><b>'+(f.name||'video').replace(/</g,'&lt;')+'</b><span>'+mb(f.size)+'</span></div>';
-  var pb=document.createElement('button');pb.textContent='Play';pb.onclick=function(){play(f)};
+  var pb=document.createElement('button');pb.textContent='Play';pb.onclick=function(){try{VPApp.playDownload(f.uri,f.mime)}catch(e){play(f)}};
   var db=document.createElement('button');db.className='d';db.textContent='Delete';db.onclick=function(){if(confirm('Delete '+f.name+'?')){try{VPApp.deleteDownload(f.uri)}catch(e){}load()}};
   d.appendChild(pb);d.appendChild(db);L.appendChild(d);
  });

@@ -1439,15 +1439,17 @@ public class MainActivity extends Activity {
             } catch (Throwable e) { /* ignore */ }
             return arr.toString();
         }
-        @JavascriptInterface public void playDownload(String uri, String mime) {
+        @JavascriptInterface public void playDownload(final String uri, final String mime) {
             if (t.url == null || !t.url.startsWith("file:///android_asset/") || uri == null) return;
             ui.post(new Runnable() { public void run() {
                 try {
-                    Intent in = new Intent(Intent.ACTION_VIEW);
-                    in.setDataAndType(Uri.parse(uri), mime == null ? "video/*" : mime);
+                    Intent in = new Intent(MainActivity.this, PlayerActivity.class);
+                    in.setData(Uri.parse(uri));
                     in.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                    startActivity(Intent.createChooser(in, "Play with"));
-                } catch (Throwable e) { toast("No player available"); }
+                    startActivity(in);
+                } catch (Throwable e) {
+                    try { Intent x = new Intent(Intent.ACTION_VIEW); x.setDataAndType(Uri.parse(uri), mime == null ? "video/*" : mime); x.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION); startActivity(Intent.createChooser(x, "Play with")); } catch (Throwable e2) { toast("No player available"); }
+                }
             }});
         }
         @JavascriptInterface public void deleteDownload(String uri) {

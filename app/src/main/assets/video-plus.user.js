@@ -77,6 +77,12 @@
     '<button id="vp-fab" title="Video Plus">\uD83C\uDFAC</button>' +
     '<div id="vp-panel"></div><div id="vp-hud"></div><div id="vp-cap"></div><div id="vp-bar"><b id="vp-bpp">\u23EF</b><span id="vp-bc">0:00</span><input id="vp-br" type="range" min="0" max="1000" value="0"><span id="vp-bd">0:00</span></div>';
   document.documentElement.appendChild(root);
+  /* lift video captions off the very bottom edge so they are not clipped in fullscreen/landscape */
+  try {
+    var cueStyle = document.createElement('style');
+    cueStyle.textContent = 'video::cue{font-size:3.2vw;line-height:1.3;background:rgba(0,0,0,.6)!important;white-space:normal}video::-webkit-media-text-track-display{bottom:8% !important;top:auto !important}video::-webkit-media-text-track-container{bottom:6% !important;max-height:86% !important}';
+    (document.head || document.documentElement).appendChild(cueStyle);
+  } catch (e) {}
   var $ = function (s) { return root.querySelector(s); };
   var panel = $('#vp-panel'), hud = $('#vp-hud'), hudT;
   function say(t, ms) { hud.textContent = t; hud.style.display = 'block'; clearTimeout(hudT); hudT = setTimeout(function () { hud.style.display = 'none'; }, ms || 800); }
@@ -394,7 +400,7 @@
       try { w = new Worker(URL.createObjectURL(new Blob([SUB_WORKER], { type: 'text/javascript' })), { type: 'module' }); }
       catch (e) { subSt = 'blocked by this site security'; say('This site blocks the subtitle engine', 2500); return; }
     }
-    var tr = v.addTextTrack('subtitles', 'AI English', 'en'); tr.mode = 'showing';
+    var tr = v.addTextTrack('subtitles', 'AI English', 'en'); tr.mode = 'showing'; tr.__vpLift = true;
     var sp = AC.createScriptProcessor(4096, 1, 1), ratio = AC.sampleRate / 16000, parts = [], len = 0, t0 = 0, busy = false, queue = [], ready = false, capT, run = 0, quiet = 0, lastTx = '', model = S.model || 'base';
     sub = { w: w, sp: sp, v: v, tr: tr }; subSt = 'loading ' + model + ' engine...';
     var cap = $('#vp-cap');
@@ -411,9 +417,9 @@
         m.chunks.forEach(function (c) {
           var tx = (c.text || '').trim(); if (tx.length < 2 || tx === lastTx) return; lastTx = tx;
           var s0 = m.t0 + (c.timestamp[0] || 0), en = c.timestamp[1] == null ? Math.min(m.t0 + m.dur, s0 + 4) : m.t0 + c.timestamp[1];
-          try { tr.addCue(new VTTCue(s0, Math.max(en, s0 + 1.2), tx)); } catch (x) {} shown.push(tx);
+          try { var cu = new VTTCue(s0, Math.max(en, s0 + 1.2), tx); try { cu.line = -3; cu.snapToLines = true; } catch (e2) {} tr.addCue(cu); } catch (x) {} shown.push(tx);
         });
-        if (!shown.length && m.text && m.text.trim().length > 1 && m.text.trim() !== lastTx) { lastTx = m.text.trim(); try { tr.addCue(new VTTCue(m.t0, m.t0 + m.dur, lastTx)); } catch (x) {} shown.push(lastTx); }
+        if (!shown.length && m.text && m.text.trim().length > 1 && m.text.trim() !== lastTx) { lastTx = m.text.trim(); try { var cu2 = new VTTCue(m.t0, m.t0 + m.dur, lastTx); try { cu2.line = -3; } catch (e3) {} tr.addCue(cu2); } catch (x) {} shown.push(lastTx); }
         if (shown.length) show(shown.join(' '));
         if (m.ms > m.dur * 1000 * 1.1) subSt = 'slower than video (' + queue.length + ' waiting) - try the Fast model'; else subSt = 'listening';
         pump();

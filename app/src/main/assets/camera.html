@@ -1,0 +1,75 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Camera live view</title>
+<style>
+body{margin:0;background:#111116;color:#eee;font-family:sans-serif;padding:16px 16px 60px}
+h2{margin:14px 0 4px;font-size:20px}p{color:#aaa;font-size:13.5px;line-height:1.45}
+label{display:block;margin:10px 0 3px;font-size:13px;color:#bbb}
+input,select{width:100%;box-sizing:border-box;background:#1c1c24;border:1px solid #333;color:#fff;border-radius:9px;padding:11px;font-size:15px}
+.two{display:flex;gap:8px}.two>div{flex:1}
+.go{display:block;width:100%;background:#6a4cff;color:#fff;border:0;text-align:center;padding:14px;border-radius:12px;font-size:16px;margin:16px 0 6px}
+.b{background:#2a2a36;color:#fff;border:0;border-radius:9px;padding:11px;font-size:14px;margin-top:8px;width:100%}
+.url{background:#16161c;border:1px solid #262630;border-radius:9px;padding:10px;font-size:12.5px;word-break:break-all;color:#9a7bff;margin-top:10px}
+video{width:100%;border-radius:10px;margin-top:12px;background:#000}
+.note{background:#1c1c24;border-radius:10px;padding:10px 12px;margin-top:14px;font-size:12.5px;color:#bbb}
+</style></head><body>
+<h2>Camera live view (RTSP)</h2>
+<p>Old XMEye / Dahua / Hikvision cameras need Internet Explorer's ActiveX for web video, which no phone browser can run. The live stream itself (RTSP) does work — fill in the details and this builds the stream address and tries to play it.</p>
+
+<label>Camera type</label>
+<select id="brand">
+ <option value="xmeye">XMEye / generic (/user=...)</option>
+ <option value="dahua">Dahua</option>
+ <option value="hik">Hikvision</option>
+ <option value="custom">Custom path</option>
+</select>
+<label>Camera IP or host</label>
+<input id="host" placeholder="192.168.1.108" autocomplete="off" inputmode="url">
+<div class="two">
+ <div><label>RTSP port</label><input id="port" value="554" inputmode="numeric"></div>
+ <div><label>Channel</label><input id="ch" value="1" inputmode="numeric"></div>
+</div>
+<div class="two">
+ <div><label>Username</label><input id="user" value="admin" autocomplete="off"></div>
+ <div><label>Password</label><input id="pass" type="password" autocomplete="off"></div>
+</div>
+<label id="cpl" style="display:none">Custom path (after host:port)</label>
+<input id="cpath" style="display:none" placeholder="/live/ch0" autocomplete="off">
+<label><input type="checkbox" id="sub" style="width:auto;vertical-align:-2px"> Use sub-stream (lighter, for slow networks)</label>
+
+<button class="go" id="play">Build address &amp; play</button>
+<div id="urlbox"></div>
+<video id="v" controls playsinline></video>
+<button class="b" id="vlc" style="display:none">Open in VLC / another player</button>
+<button class="b" id="copy" style="display:none">Copy stream address</button>
+
+<div class="note" id="n">
+<b>If it does not play here:</b> Android's browser can't decode every camera stream. Copy the address and open it in <b>VLC</b> (Media → Open Network Stream) or the <b>XMEye</b> app — those always work for live view. This page only builds the correct address and tries a quick preview.
+</div>
+
+<script>
+var $=function(i){return document.getElementById(i)};
+function path(brand,ch,sub){var s=sub?1:0;
+ if(brand==='dahua')return '/cam/realmonitor?channel='+ch+'&subtype='+s;
+ if(brand==='hik')return '/Streaming/Channels/'+ch+(sub?'02':'01');
+ if(brand==='custom')return $('cpath').value.trim()||'/';
+ /* xmeye / generic: /user=..&channel=..&stream=.. */
+ return '/user='+encodeURIComponent($('user').value)+'&password='+encodeURIComponent($('pass').value)+'&channel='+ch+'&stream='+s+'.sdp';
+}
+function build(){
+ var brand=$('brand').value,host=$('host').value.trim().replace(/^rtsp:\/\//,'').replace(/\/.*$/,''),port=($('port').value.trim()||'554'),ch=($('ch').value.trim()||'1'),u=$('user').value.trim(),p=$('pass').value,sub=$('sub').checked;
+ if(!host)return '';
+ var auth=(brand==='xmeye')?'':((u?encodeURIComponent(u):'')+(p?':'+encodeURIComponent(p):'')+(u||p?'@':''));
+ return 'rtsp://'+auth+host+':'+port+path(brand,ch,sub);
+}
+$('brand').onchange=function(){var c=this.value==='custom';$('cpl').style.display=c?'block':'none';$('cpath').style.display=c?'block':'none'};
+function save(){try{var o={};['brand','host','port','ch','user'].forEach(function(k){o[k]=$(k).value});localStorage.setItem('vpcam',JSON.stringify(o))}catch(e){}}
+try{var o=JSON.parse(localStorage.getItem('vpcam')||'{}');for(var k in o)if($(k))$(k).value=o[k];$('brand').onchange()}catch(e){}
+$('play').onclick=function(){var u=build();if(!u){$('urlbox').innerHTML='<div class="url">Enter the camera IP first.</div>';return}save();
+ $('urlbox').innerHTML='<div class="url">'+u.replace(/</g,'&lt;')+'</div>';
+ $('vlc').style.display='block';$('copy').style.display='block';
+ var v=$('v');v.src=u;v.load();v.play().catch(function(){});
+ $('vlc').onclick=function(){location.href=u};
+ $('copy').onclick=function(){try{navigator.clipboard.writeText(u)}catch(e){}var t=document.createElement('textarea');t.value=u;document.body.appendChild(t);t.select();try{document.execCommand('copy')}catch(e){}t.remove();$('copy').textContent='Copied';setTimeout(function(){$('copy').textContent='Copy stream address'},1500)};
+};
+</script>
+</body></html>

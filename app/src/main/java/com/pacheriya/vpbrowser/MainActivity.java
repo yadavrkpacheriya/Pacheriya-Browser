@@ -95,7 +95,7 @@ public class MainActivity extends Activity {
         String fallback;
         final ArrayList<Entry> entries = new ArrayList<Entry>();
         final java.util.HashSet<String> covered = new java.util.HashSet<String>();
-        int gen, pending;
+        int gen, pending, uaMode = -1; // -1 = follow global
         boolean panelOpen, autoShown;
     }
 
@@ -221,7 +221,9 @@ public class MainActivity extends Activity {
     private boolean autoPrev = true;
     private String readerJs = "";
     private String autoTr = "";
-    private String injected = "", defaultUa = "", desktopUa = "";
+    private String injected = "", defaultUa = "", desktopUa = "", UA_EDGE = "", UA_IE = "", UA_FF = "";
+    private int uaMode = 0; // 0 default,1 desktop chrome,2 edge,3 IE11,4 firefox
+    private static final String[] UA_NAMES = {"Default (mobile)", "Desktop Chrome", "Microsoft Edge", "Internet Explorer 11", "Firefox"};
     private static final java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.ConcurrentHashMap<String, Integer>> ORIGINS = new java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.ConcurrentHashMap<String, Integer>>();
     private static String hostOf(String u) { try { return Uri.parse(u).getHost(); } catch (Exception e) { return null; } }
     private static void noteOrigin(String page, String req) {
@@ -307,6 +309,10 @@ public class MainActivity extends Activity {
         java.util.regex.Matcher cm = Pattern.compile("Chrome/([\\d.]+)").matcher(ua);
         String cv = cm.find() ? cm.group(1) : "120.0.0.0";
         desktopUa = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/" + cv + " Safari/537.36";
+        UA_EDGE = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/" + cv + " Safari/537.36 Edg/" + cv;
+        UA_IE = "Mozilla/5.0 (Windows NT 10.0; WOW64; Trident/7.0; rv:11.0) like Gecko";
+        UA_FF = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0";
+        uaMode = sp.getInt("uamode", 0);
 
         buildUi();
         setContentView(root);
@@ -630,12 +636,12 @@ public class MainActivity extends Activity {
         s.setMediaPlaybackRequiresUserGesture(false);
         s.setSupportMultipleWindows(true);
         s.setJavaScriptCanOpenWindowsAutomatically(true);
-        s.setLoadWithOverviewMode(desktop);
         s.setUseWideViewPort(true);
         s.setBuiltInZoomControls(true);
         s.setDisplayZoomControls(false);
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
-        s.setUserAgentString(desktop ? desktopUa : defaultUa);
+        s.setUserAgentString(uaFor(uaMode));
+        s.setLoadWithOverviewMode(uaMode != 0);
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(w, true);
         w.addJavascriptInterface(new Bridge(t), "VPApp");
@@ -962,13 +968,40 @@ public class MainActivity extends Activity {
         return "https://www.google.com/search?q=";
     }
 
+    private String uaFor(int m) {
+        switch (m) { case 1: return desktopUa; case 2: return UA_EDGE; case 3: return UA_IE; case 4: return UA_FF; default: return defaultUa; }
+    }
+
+    private void applyUa(Tab t) {
+        if (t == null) return;
+        WebSettings s = t.wv.getSettings();
+        int m = t.uaMode >= 0 ? t.uaMode : uaMode;
+        boolean deskLayout = m != 0;
+        s.setUserAgentString(uaFor(m));
+        s.setLoadWithOverviewMode(deskLayout);
+    }
+
+    private void pickIdentity() {
+        int cur0 = cur != null && cur.uaMode >= 0 ? cur.uaMode : uaMode;
+        new AlertDialog.Builder(this).setTitle("Browser identity")
+            .setSingleChoiceItems(UA_NAMES, cur0, new DialogInterface.OnClickListener() {
+                public void onClick(DialogInterface d, int which) {
+                    uaMode = which;
+                    sp.edit().putInt("uamode", which).apply();
+                    if (cur != null) { cur.uaMode = which; applyUa(cur); cur.wv.reload(); }
+                    d.dismiss();
+                    toast(which == 3 ? "Internet Explorer 11 identity: camera login pages should open now (live video needs the camera app)" : "Identity: " + UA_NAMES[which]);
+                }
+            }).setNegativeButton("Cancel", null).show();
+    }
+
     private void showSettings() {
         final String[] items = {
             "Dark mode for sites: " + (dark ? "ON" : "off"),
             "Block ads: " + (adblock ? "ON" : "off"),
             "Always use secure https: " + (httpsUp ? "ON" : "off"),
             "Video Plus scripts: " + (scripts ? "ON" : "off"),
-            "Desktop site: " + (desktop ? "ON" : "off"),
+            "Browser identity: " + UA_NAMES[uaMode],
             "Text size: " + textZoom + "%",
             "Search engine: " + engine,
             "Clear browsing data"
@@ -996,11 +1029,8 @@ public class MainActivity extends Activity {
                             toggleScripts();
                             break;
                         case 4:
-                            desktop = !desktop;
-                            cur.wv.getSettings().setUserAgentString(desktop ? desktopUa : defaultUa);
-                            cur.wv.getSettings().setLoadWithOverviewMode(desktop);
-                            cur.wv.reload();
-                            break;
+                            pickIdentity();
+                            return;
                         case 5: pickZoom(); return;
                         case 6: pickEngine(); return;
                         case 7:
@@ -1446,9 +1476,9 @@ public class MainActivity extends Activity {
 
     private void showMenu(View anchor) {
         boolean bm = cur != null && Store.isBookmarked(sp, cur.url);
-        final int[] ids = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23};
+        final int[] ids = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24};
         final String[] labels = {"New tab", "Private tab", "Reload", "Forward", "Find in page", bm ? "Unbookmark" : "Bookmark",
-            "Bookmarks", "History", "Float video", "Video Plus", "Translate", "Downloads", "Copy link", "Share", "Settings", "Update", "Exit", saver ? "Saver: ON" : "Data saver", "Reading mode", autoTr.isEmpty() ? "Auto-translate: off" : "Auto: " + autoTr.toUpperCase(), autoPrev ? "Preview: ON" : "Preview: off", picTr ? "Picture translate: ON" : "Picture translate: off", "Find full video"};
+            "Bookmarks", "History", "Float video", "Video Plus", "Translate", "Downloads", "Copy link", "Share", "Settings", "Update", "Exit", saver ? "Saver: ON" : "Data saver", "Reading mode", autoTr.isEmpty() ? "Auto-translate: off" : "Auto: " + autoTr.toUpperCase(), autoPrev ? "Preview: ON" : "Preview: off", picTr ? "Picture translate: ON" : "Picture translate: off", "Find full video", "Camera live view (RTSP)"};
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
         GradientDrawable bg = new GradientDrawable();
@@ -1514,6 +1544,9 @@ public class MainActivity extends Activity {
                 break;
             case 23:
                 if (cur != null) cur.wv.loadUrl("file:///android_asset/finder.html");
+                break;
+            case 24:
+                if (cur != null) cur.wv.loadUrl("file:///android_asset/camera.html");
                 break;
             case 22:
                 picTr = !picTr;

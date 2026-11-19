@@ -116,6 +116,30 @@
     root.style.display = vids.length ? 'block' : 'none';
   }
   setInterval(scan, 1500); scan();
+
+  /* keep a buffer ahead (~90s where the site allows) so playback does not stall on brief WiFi dips */
+  function bufferedAhead(v) {
+    try { for (var i = v.buffered.length - 1; i >= 0; i--) { if (v.buffered.start(i) <= v.currentTime + 0.1 && v.buffered.end(i) >= v.currentTime) return v.buffered.end(i) - v.currentTime; } } catch (e) {}
+    return 0;
+  }
+  function markStall(e) { var v = e.target; if (v instanceof HTMLVideoElement) { v.__vpStallAt = Date.now(); } }
+  document.addEventListener('waiting', markStall, true);
+  setInterval(function () {
+    if (S.boost === false) return;
+    vids.forEach(function (v) {
+      if (v.paused || !isFinite(v.duration) || v.duration < 60) return;
+      try {
+        if (v.preload !== 'auto') v.preload = 'auto';
+        /* only recover from a genuine stall that has lasted a few seconds, and only on a VOD (not live) */
+        var live = !isFinite(v.duration) || v.seekable && v.seekable.length && (v.seekable.end(v.seekable.length - 1) - v.currentTime) < 0 ;
+        if (v.__vpStallAt && Date.now() - v.__vpStallAt > 4000 && v.readyState < 3 && bufferedAhead(v) < 1 && !v.__vpNudge) {
+          v.__vpNudge = 1; v.__vpStallAt = 0;
+          try { v.load && v.networkState === 3 ? 0 : (v.currentTime = v.currentTime); } catch (e) {}
+          setTimeout(function () { v.__vpNudge = 0; }, 4000);
+        }
+      } catch (e) {}
+    });
+  }, 1500);
   function target() {
     var best = null, bs = 0;
     vids.forEach(function (v) {

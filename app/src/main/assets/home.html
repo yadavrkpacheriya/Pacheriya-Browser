@@ -49,9 +49,53 @@ document.getElementById('mode').onchange=function(){try{localStorage.setItem('vp
 <script>
 var D=[["Video & Streaming (free, no account)", [["YouTube", "m.youtube.com"], ["Dailymotion", "dailymotion.com"], ["Vimeo", "vimeo.com"], ["MX Player", "mxplayer.in"], ["Tubi", "tubitv.com"], ["Pluto TV", "pluto.tv"], ["Internet Archive", "archive.org"], ["Bilibili", "bilibili.tv"], ["Rumble", "rumble.com"], ["Odysee", "odysee.com"], ["Twitch", "twitch.tv"]]], ["Dragon Ball (free to read / check where to watch)", [["MANGA Plus: Dragon Ball Super", "mangaplus.shueisha.co.jp"], ["JustWatch: DBZ in India", "justwatch.com/in/tv-show/dragon-ball-z"], ["Dragon Ball Official", "dragonball-official.com"]]], ["Free Movies (legal, no sign-in)", [["Internet Archive Films (download)", "archive.org/details/feature_films"], ["Public Domain Movies", "publicdomainmovies.net"], ["Classic Cinema Online", "classiccinemaonline.com"], ["Blender Open Movies (download)", "studio.blender.org/films"], ["Wikimedia Commons Films", "commons.wikimedia.org/wiki/Category:Feature_films"], ["Open Culture Free Movies", "openculture.com/freemoviesonline"], ["Tubi", "tubitv.com"], ["Pluto TV", "pluto.tv"], ["MX Player", "mxplayer.in"], ["Vimeo Public Domain", "vimeo.com/channels/publicdomainfilms"], ["Retrovision", "retrovision.tv"]]], ["Movies & Shows Info", [["IMDb", "imdb.com"], ["Rotten Tomatoes", "rottentomatoes.com"], ["JustWatch", "justwatch.com"], ["TMDB", "themoviedb.org"], ["Letterboxd", "letterboxd.com"], ["BookMyShow", "in.bookmyshow.com"]]], ["Manga & Webtoons (free to read)", [["MANGA Plus (Shueisha)", "mangaplus.shueisha.co.jp"], ["MangaDex", "mangadex.org"], ["WEBTOON", "webtoons.com"], ["Tapas", "tapas.io"], ["K Manga (Kodansha)", "kmanga.kodansha.com"], ["Comikey", "comikey.com"], ["Toonsutra (Indian)", "toonsutra.com"], ["Pratilipi Comics (Hindi)", "pratilipicomics.com"]]], ["Comics (free previews and classics)", [["Marvel Comics (previews)", "marvel.com/comics"], ["DC Comics (previews)", "dc.com"], ["Raj Comics", "rajcomics.com"], ["Internet Archive Comics", "archive.org/details/comics"], ["Digital Comic Museum", "digitalcomicmuseum.com"], ["Comic Book Plus", "comicbookplus.com"], ["Comic Vine (info)", "comicvine.gamespot.com"]]], ["Japan, Korea, China manga (original sites, free)", [["Shonen Jump+ (Japan)", "shonenjumpplus.com"], ["Comic Walker (Japan)", "comic-walker.com"], ["Pixiv Comic (Japan)", "comic.pixiv.net"], ["Naver Webtoon (Korea)", "comic.naver.com"], ["Bilibili Comics (China)", "manga.bilibili.com"], ["Kuaikan (China)", "kuaikanmanhua.com"], ["Tencent Comics (China)", "ac.qq.com"], ["WEBTOON Global", "webtoons.com"]]], ["Novels & Web Novels (free to read)", [["Royal Road", "royalroad.com"], ["Wattpad", "wattpad.com"], ["Webnovel", "webnovel.com"], ["Wuxiaworld", "wuxiaworld.com"], ["Syosetu (Japan)", "syosetu.com"], ["Kakuyomu (Japan)", "kakuyomu.jp"], ["Novel Updates (index)", "novelupdates.com"], ["Project Gutenberg", "gutenberg.org"], ["Standard Ebooks", "standardebooks.org"], ["Wikisource", "wikisource.org"], ["Pratilipi (Hindi)", "pratilipi.com"], ["Archive of Our Own", "archiveofourown.org"]]], ["Music & Audio (no account)", [["YouTube Music", "music.youtube.com"], ["JioSaavn", "jiosaavn.com"], ["Gaana", "gaana.com"], ["SoundCloud", "soundcloud.com"], ["Audiomack", "audiomack.com"], ["Bandcamp", "bandcamp.com"], ["Internet Archive Audio", "archive.org/details/audio"]]], ["Social (readable without an account)", [["Reddit", "reddit.com"], ["Threads", "threads.net"], ["Tumblr", "tumblr.com"], ["Bluesky", "bsky.app"], ["Mastodon", "mastodon.social"], ["9GAG", "9gag.com"], ["Imgur", "imgur.com"], ["Quora", "quora.com"]]], ["Gaming (free)", [["Steam Store", "store.steampowered.com"], ["Epic Games Store", "store.epicgames.com"], ["GOG", "gog.com"], ["itch.io (free games)", "itch.io"], ["IGN", "ign.com"], ["CrazyGames", "crazygames.com"], ["Poki", "poki.com"], ["Miniclip", "miniclip.com"], ["Y8", "y8.com"], ["Chess.com", "chess.com"], ["Lichess", "lichess.org"]]], ["Tools & AI (no account)", [["Google", "google.com"], ["Google Maps", "maps.google.com"], ["Google Translate", "translate.google.com"], ["Google Lens", "lens.google.com"], ["DuckDuckGo", "duckduckgo.com"], ["ChatGPT", "chatgpt.com"], ["Wikipedia", "wikipedia.org"], ["GitHub", "github.com"], ["Speedtest", "speedtest.net"], ["WeTransfer", "wetransfer.com"], ["Wayback Machine", "web.archive.org"]]]],AD=[["Pornhub", "pornhub.org"], ["XVideos", "xvideos.com"], ["XNXX", "xnxx.com"], ["xHamster", "xhamster.com"], ["Eporner", "eporner.com"], ["RedTube", "redtube.com"], ["SpankBang", "spankbang.com"], ["YouPorn", "youporn.com"], ["Tube8", "tube8.com"], ["TNAFlix", "tnaflix.com"], ["Beeg", "beeg.com"], ["Thumbzilla", "thumbzilla.com"], ["HQPorner", "hqporner.com"], ["Txxx", "txxx.com"], ["PornOne", "pornone.com"], ["Porntrex", "porntrex.com"], ["Fapster", "fapster.xxx"], ["Pornzog", "pornzog.com"]],CM=[["Chaturbate", "chaturbate.com"], ["Stripchat", "stripchat.com"], ["BongaCams", "bongacams.com"], ["Cam4", "cam4.com"], ["MyFreeCams", "myfreecams.com"]],ST=[["Literotica (stories)", "literotica.com"], ["Soundgasm (audio)", "soundgasm.net"], ["Archive of Our Own (Mature)", "archiveofourown.org"]],GA=[["Oglaf (adult fantasy comedy webcomic, free)", "oglaf.com"], ["Menage a 3 (adult webcomic, free)", "ma3comic.com"], ["Hentai Foundry (artist comics and art)", "hentai-foundry.com"], ["Slipshine (free weekly adult comic)", "slipshine.net"], ["GlobalComix (creator comics, some adult)", "globalcomix.com"], ["itch.io adult comics (by artists)", "itch.io/comics"]];
 function sec(n,l,cls,open){var d=document.createElement('details');if(cls)d.className=cls;if(open)d.open=true;var h='<summary>'+n+'</summary><div class="g">';l.forEach(function(x){h+='<a href="https://'+x[1]+'">'+x[0]+'</a>'});d.innerHTML=h+'</div>';document.getElementById('c').appendChild(d)}
-D.forEach(function(c,i){sec(c[0],c[1],'',i==0)});
-sec('18+ Adult tube sites (adults only)',AD,'a',false);
-sec('18+ Live cams (adults only)',CM,'a',false);
-sec('18+ Stories and audio (adults only)',ST,'a',false);
-sec('18+ Adult comics and art (adults only)',GA,'a',false);
+/* build default category list (normal + 18+), then let the user edit/sort/delete and save it */
+var DEFAULT=D.map(function(c){return {n:c[0],a:false,s:c[1].map(function(x){return {t:x[0],u:x[1]}})}});
+[['18+ Adult tube sites (adults only)',AD],['18+ Live cams (adults only)',CM],['18+ Stories and audio (adults only)',ST],['18+ Adult comics and art (adults only)',GA]].forEach(function(p){DEFAULT.push({n:p[0],a:true,s:p[1].map(function(x){return {t:x[0],u:x[1]}})})});
+function loadCats(){try{var v=JSON.parse(localStorage.getItem('vp_cats'));if(v&&v.length)return v}catch(e){}return JSON.parse(JSON.stringify(DEFAULT));}
+function saveCats(c){try{localStorage.setItem('vp_cats',JSON.stringify(c))}catch(e){}}
+var CATS=loadCats(), EDIT=false;
+var cEl=document.getElementById('c');
+function render(){
+ cEl.innerHTML='';
+ var bar=document.createElement('div');bar.style.cssText='max-width:560px;margin:0 auto 10px;display:flex;gap:8px;justify-content:flex-end';
+ var eb=document.createElement('button');eb.textContent=EDIT?'Done':'Edit list';eb.style.cssText='background:'+(EDIT?'#6a4cff':'#23233a')+';color:'+(EDIT?'#fff':'#c9b3ff')+';border:0;border-radius:10px;padding:9px 14px;font-size:13px';eb.onclick=function(){EDIT=!EDIT;render()};
+ bar.appendChild(eb);
+ if(EDIT){var ab=document.createElement('button');ab.textContent='+ Category';ab.style.cssText='background:#2a3a2a;color:#9f9;border:0;border-radius:10px;padding:9px 14px;font-size:13px';ab.onclick=function(){var n=prompt('New category name');if(n){CATS.push({n:n,a:false,s:[]});saveCats(CATS);render()}};bar.appendChild(ab);
+  var rb=document.createElement('button');rb.textContent='Reset';rb.style.cssText='background:#3a2a2a;color:#f99;border:0;border-radius:10px;padding:9px 14px;font-size:13px';rb.onclick=function(){if(confirm('Reset the whole list to defaults?')){CATS=JSON.parse(JSON.stringify(DEFAULT));saveCats(CATS);render()}};bar.appendChild(rb);}
+ cEl.appendChild(bar);
+ CATS.forEach(function(c,ci){
+  var d=document.createElement('details');if(c.a)d.className='a';if(ci===0&&!EDIT)d.open=true;if(EDIT)d.open=true;
+  var sm=document.createElement('summary');sm.textContent=c.n;d.appendChild(sm);
+  var g=document.createElement('div');g.className='g';
+  if(EDIT){
+   var ctrl=document.createElement('div');ctrl.style.cssText='display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 8px';
+   ctrl.innerHTML='';
+   [['\u2191',function(){if(ci>0){var t=CATS[ci-1];CATS[ci-1]=CATS[ci];CATS[ci]=t;saveCats(CATS);render()}}],
+    ['\u2193',function(){if(ci<CATS.length-1){var t=CATS[ci+1];CATS[ci+1]=CATS[ci];CATS[ci]=t;saveCats(CATS);render()}}],
+    ['Rename',function(){var n=prompt('Category name',c.n);if(n){c.n=n;saveCats(CATS);render()}}],
+    ['+ Site',function(){var t=prompt('Site name');if(!t)return;var u=prompt('Site address (e.g. example.com)');if(!u)return;c.s.push({t:t,u:u.replace(/^https?:\/\//,'')});saveCats(CATS);render()}],
+    ['Delete category',function(){if(confirm('Delete "'+c.n+'"?')){CATS.splice(ci,1);saveCats(CATS);render()}}]
+   ].forEach(function(b){var x=document.createElement('button');x.textContent=b[0];x.style.cssText='background:#2a2a3a;color:#cdd;border:0;border-radius:8px;padding:6px 10px;font-size:12px';x.onclick=b[1];ctrl.appendChild(x)});
+   g.appendChild(ctrl);
+  }
+  c.s.forEach(function(site,si){
+   if(EDIT){
+    var row=document.createElement('div');row.style.cssText='display:flex;align-items:center;gap:4px;margin:3px 0';
+    var lab=document.createElement('span');lab.textContent=site.t;lab.style.cssText='flex:1;font-size:13px;color:#ddd;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+    row.appendChild(lab);
+    [['\u2191',function(){if(si>0){var t=c.s[si-1];c.s[si-1]=c.s[si];c.s[si]=t;saveCats(CATS);render()}}],
+     ['\u2193',function(){if(si<c.s.length-1){var t=c.s[si+1];c.s[si+1]=c.s[si];c.s[si]=t;saveCats(CATS);render()}}],
+     ['\u270E',function(){var t=prompt('Name',site.t);if(t===null)return;var u=prompt('Address',site.u);if(u===null)return;site.t=t;site.u=u.replace(/^https?:\/\//,'');saveCats(CATS);render()}],
+     ['\u2715',function(){c.s.splice(si,1);saveCats(CATS);render()}]
+    ].forEach(function(b){var x=document.createElement('button');x.textContent=b[0];x.style.cssText='background:#23233a;color:#c9b3ff;border:0;border-radius:7px;padding:5px 9px;font-size:13px';x.onclick=b[1];row.appendChild(x)});
+    g.appendChild(row);
+   } else {
+    var a=document.createElement('a');a.href=/^https?:/.test(site.u)?site.u:'https://'+site.u;a.textContent=site.t;g.appendChild(a);
+   }
+  });
+  d.appendChild(g);cEl.appendChild(d);
+ });
+}
+render();
 </script></body></html>

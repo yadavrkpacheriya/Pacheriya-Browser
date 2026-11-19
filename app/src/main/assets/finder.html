@@ -29,6 +29,9 @@ p{color:#aaa;font-size:13.5px;line-height:1.45}
 <p>Step 2 — once you know the name, type it and check each service. Each button opens that service's own search, so you see at once if it is there and whether it is free or paid.</p>
 <div class="find"><input id="q" placeholder="Movie or show name" autocomplete="off"><button id="go">Check</button></div>
 <div id="svc"></div>
+<p style="margin-top:14px">Or search any other site yourself — type its address (e.g. einthusan.tv) and it opens that site's own search for the title. Sites you add are remembered.</p>
+<div class="find"><input id="cs" placeholder="site address, e.g. tamilyogi.cc" autocomplete="off"><button id="csadd">Search</button></div>
+<div id="mysites"></div>
 
 <video id="v" muted playsinline style="display:none"></video>
 <script>
@@ -105,6 +108,20 @@ SV.forEach(function(x){var b=document.createElement('button');b.className='b'+(x
 box.appendChild(r)}
 document.getElementById('go').onclick=function(){var q=document.getElementById('q').value.trim();if(q){remember(q);svc(q)}};
 document.getElementById('q').addEventListener('keydown',function(e){if(e.key==='Enter')document.getElementById('go').click()});
+
+/* user-added sites: open the site's own search for the title, remember them, and learn how it searches */
+function siteSearch(host,q){host=host.replace(/^https?:\/\//,'').replace(/\/.*$/,'').trim();if(!host)return;
+var u=LS('sitetpl',{})[host];
+if(u){location.href=u.replace('%q',encodeURIComponent(q));return}
+/* first time: try the site's own search box; if it has none, fall back to a Google site: search */
+location.href='https://www.google.com/search?q='+encodeURIComponent(q)+'+site:'+host}
+function remHost(host){host=host.replace(/^https?:\/\//,'').replace(/\/.*$/,'').trim();if(!host)return;var h=LS('sites',[]);h=h.filter(function(x){return x!==host});h.unshift(host);SV_('sites',h.slice(0,20));showSites()}
+function showSites(){var box=document.getElementById('mysites');var h=LS('sites',[]);if(!h.length){box.innerHTML='';return}
+box.innerHTML='<div class="mem"><b>Your sites</b> (tap to search the name above):<br>'+h.map(function(s){return '<a href="#" data-s="'+s+'">'+s.replace(/</g,'&lt;')+'</a>'}).join(' &nbsp;·&nbsp; ')+'</div>';
+Array.prototype.forEach.call(box.querySelectorAll('a'),function(a){a.onclick=function(e){e.preventDefault();var q=document.getElementById('q').value.trim();if(!q){document.getElementById('q').scrollIntoView();return}remember(q);siteSearch(a.dataset.s,q)}})}
+document.getElementById('csadd').onclick=function(){var host=document.getElementById('cs').value.trim();var q=document.getElementById('q').value.trim();if(!host)return;remHost(host);if(q){remember(q);siteSearch(host,q)}else{document.getElementById('cs').value='';}};
+document.getElementById('cs').addEventListener('keydown',function(e){if(e.key==='Enter')document.getElementById('csadd').click()});
+showSites();
 showMem();
 </script>
 </body></html>

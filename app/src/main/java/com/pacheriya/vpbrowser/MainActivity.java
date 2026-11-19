@@ -702,10 +702,7 @@ public class MainActivity extends Activity {
                     v.loadUrl(pdfViewer(r.getUrl().toString())); return true;
                 }
                 if ("http".equals(sc) || "https".equals(sc) || "file".equals(sc) || "about".equals(sc) || "data".equals(sc) || "blob".equals(sc)) return false;
-                if ("magnet".equals(sc) || "mailto".equals(sc) || "tel".equals(sc)) {
-                    try { startActivity(new Intent(Intent.ACTION_VIEW, r.getUrl())); } catch (Exception e) { toast("No app can open this link"); }
-                }
-                return true;
+                return openExternal(v, u, sc);
             }
 
             @Override public void onPageStarted(WebView v, String u, Bitmap f) {
@@ -1002,6 +999,33 @@ public class MainActivity extends Activity {
             resp.setResponseHeaders(hd);
             return resp;
         } catch (Throwable e) { return null; }
+    }
+
+    /* handle intent:// and app-scheme links the way Chrome/Brave/Edge do: open the app, else its web fallback, else the store */
+    private boolean openExternal(WebView v, String u, String sc) {
+        if ("intent".equals(sc)) {
+            try {
+                Intent in = Intent.parseUri(u, Intent.URI_INTENT_SCHEME);
+                in.addCategory(Intent.CATEGORY_BROWSABLE);
+                in.setComponent(null);
+                in.setSelector(null);
+                if (in.resolveActivity(getPackageManager()) != null) { startActivity(in); return true; }
+                String fb = in.getStringExtra("browser_fallback_url");
+                if (fb != null && fb.startsWith("http")) { v.loadUrl(fb); return true; }
+                String pkg = in.getPackage();
+                if (pkg != null) { try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=" + pkg))); } catch (Exception e) { toast("App not installed"); } return true; }
+            } catch (Exception e) { /* fall through */ }
+            toast("Couldn't open that link");
+            return true;
+        }
+        // magnet, mailto, tel, and app schemes like upi://, kotak://, tez://, whatsapp:// etc.
+        try {
+            Intent in = new Intent(Intent.ACTION_VIEW, Uri.parse(u));
+            in.addCategory(Intent.CATEGORY_BROWSABLE);
+            if (in.resolveActivity(getPackageManager()) != null) startActivity(in);
+            else toast("No app installed to open this");
+        } catch (Exception e) { toast("No app can open this link"); }
+        return true;
     }
 
     private static boolean isPdf(String u) {

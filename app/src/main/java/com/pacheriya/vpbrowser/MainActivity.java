@@ -726,6 +726,7 @@ public class MainActivity extends Activity {
             @Override public void onPageStarted(WebView v, String u, Bitmap f) {
                 t.url = u;
                 t.loadStart = System.currentTimeMillis();
+                if (!desktop && uaMode == 0 && u.startsWith("http")) { try { v.zoomBy(1f / Math.max(0.1f, v.getScale())); } catch (Throwable e) { /* ignore */ } }
                 if (t.altScheme != null && !u.equals(t.altScheme) && !sameHostOtherScheme(u, t.altScheme)) t.altScheme = null;
                 if (u.startsWith("http")) Diag.bump("pages_opened");
                 if (t == cur && immersive) setReadMode(false);
@@ -1872,8 +1873,8 @@ public class MainActivity extends Activity {
                     try {
                         float iw = Float.parseFloat(sv.replace("\"", ""));
                         float vw = ct.wv.getWidth() / getResources().getDisplayMetrics().density;
-                        if (vw > 100 && iw > 100 && iw < vw * 0.93f) {
-                            ct.wv.zoomBy(Math.max(0.3f, iw / vw));
+                        if (vw > 100 && iw > 100 && (iw < vw * 0.93f || iw > vw * 1.07f)) {
+                            ct.wv.zoomBy(Math.max(0.3f, Math.min(3f, iw / vw)));
                             if (tries < 2) ui.postDelayed(new Runnable() { public void run() { fitZoom(ct, tries + 1); } }, 500);
                         }
                     } catch (Throwable e) { /* ignore */ }

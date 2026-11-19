@@ -41,16 +41,12 @@ public class PlayerActivity extends Activity {
         root.setBackgroundColor(Color.BLACK);
 
         view = new PlayerView(this);
+        view.setUseController(true);
+        view.setKeepContentOnPlayerReset(true);
         view.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         root.addView(view);
 
-        try {
-            DefaultRenderersFactory rf = new DefaultRenderersFactory(this)
-                .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER);
-            player = new ExoPlayer.Builder(this, rf).build();
-        } catch (Throwable e) {
-            player = new ExoPlayer.Builder(this).build();
-        }
+        player = new ExoPlayer.Builder(this).build();
         view.setPlayer(player);
         player.setAudioAttributes(AudioAttributes.DEFAULT, true);
 

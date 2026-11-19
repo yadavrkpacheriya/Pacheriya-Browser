@@ -1,48 +1,57 @@
 <!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Downloads</title>
+<title>Videos</title>
 <style>
-body{margin:0;background:#0f0f14;color:#eee;font-family:system-ui,sans-serif;padding:14px 12px 60px}
-h2{margin:6px 0 10px;font-size:20px}
+body{margin:0;background:#0f0f14;color:#eee;font-family:system-ui,sans-serif;padding:0 0 60px}
+header{position:sticky;top:0;background:#17171e;padding:10px 12px;z-index:3}
+h2{margin:0 0 8px;font-size:19px}
+.tabs{display:flex;gap:8px}
+.tabs button{flex:1;background:#23233a;color:#c9b3ff;border:0;border-radius:9px;padding:10px;font-size:14px}
+.tabs button.on{background:#6a4cff;color:#fff}
+#search{width:100%;box-sizing:border-box;margin-top:8px;background:#1c1c24;border:1px solid #333;color:#fff;border-radius:9px;padding:10px;font-size:14px;display:none}
+#list{padding:12px}
 .it{background:#1c1c24;border-radius:12px;padding:12px;margin:0 0 10px;display:flex;align-items:center;gap:10px}
 .it .nm{flex:1;overflow:hidden}.it .nm b{display:block;font-size:14px;word-break:break-word}.it .nm span{font-size:12px;color:#9aa}
-.it button{background:#6a4cff;color:#fff;border:0;border-radius:9px;padding:9px 12px;font-size:13px}
-.it button.d{background:#3a2a2a;color:#f99}
-.empty{color:#9aa;text-align:center;margin-top:40px;line-height:1.5}
-#player{position:fixed;inset:0;background:#000;display:none;z-index:10;flex-direction:column}
-#player video{flex:1;width:100%;background:#000}
-#player .top{display:flex;justify-content:space-between;padding:10px;background:#111}
-#player .top button{background:#2a2a36;color:#fff;border:0;border-radius:8px;padding:8px 14px;font-size:14px}
+.it button{background:#6a4cff;color:#fff;border:0;border-radius:9px;padding:9px 14px;font-size:13px}
+.empty{color:#9aa;text-align:center;margin-top:40px;line-height:1.6}
+.empty button{background:#6a4cff;color:#fff;border:0;border-radius:10px;padding:12px 18px;font-size:14px;margin-top:12px}
 </style></head><body>
-<h2>&#11015; My downloads</h2>
+<header>
+<h2>&#127916; Videos</h2>
+<div class="tabs"><button id="tA" class="on">All device videos</button><button id="tD">Downloads</button></div>
+<input id="search" placeholder="Search videos…">
+</header>
 <div id="list"><div class="empty">Loading…</div></div>
-<div id="player"><div class="top"><span id="pt" style="color:#ccc;font-size:13px;align-self:center;overflow:hidden"></span><button id="ext">Open in app</button><button id="cl">Close</button></div><video id="v" controls playsinline autoplay></video></div>
 <script>
+var mode='all', all=[], dl=[];
 function mb(n){n=+n||0;return n>1073741824?(n/1073741824).toFixed(1)+' GB':n>1048576?(n/1048576).toFixed(0)+' MB':(n/1024).toFixed(0)+' KB';}
-function load(){
- var raw='[]';try{raw=VPApp.listDownloads()}catch(e){}
- var arr=[];try{arr=JSON.parse(raw)}catch(e){}
+function dur(ms){ms=+ms||0;var s=Math.round(ms/1000),m=Math.floor(s/60);s=s%60;return m?(m+':'+(s<10?'0':'')+s):'';}
+function play(f){try{VPApp.playDownload(f.uri,f.mime)}catch(e){}}
+function parse(r){try{return JSON.parse(r||'[]')}catch(e){return[]}}
+function render(){
  var L=document.getElementById('list');
- if(!arr.length){L.innerHTML='<div class="empty">No downloads yet.<br>Download a video and it will appear here to play.</div>';return;}
- L.innerHTML='';
- arr.forEach(function(f){
+ var data=mode==='all'?all:dl;
+ var q=document.getElementById('search').value.trim().toLowerCase();
+ if(q)data=data.filter(function(f){return (f.name||'').toLowerCase().indexOf(q)>=0});
+ if(mode==='all'){
+   var has=false;try{has=VPApp.hasMediaPerm()}catch(e){}
+   if(!has){L.innerHTML='<div class="empty">Allow access to your videos so they can be scanned like VLC.<br><button id="perm">Allow video access</button></div>';
+     document.getElementById('perm').onclick=function(){try{VPApp.askMediaPerm()}catch(e){};setTimeout(loadAll,1200)};return;}
+ }
+ if(!data.length){L.innerHTML='<div class="empty">'+(mode==='all'?'No videos found on this device.':'No downloads yet.')+'</div>';return;}
+ L.innerHTML='';document.getElementById('search').style.display='block';
+ data.forEach(function(f){
   var d=document.createElement('div');d.className='it';
-  d.innerHTML='<div class="nm"><b>'+(f.name||'video').replace(/</g,'&lt;')+'</b><span>'+mb(f.size)+'</span></div>';
-  var pb=document.createElement('button');pb.textContent='Play';pb.onclick=function(){try{VPApp.playDownload(f.uri,f.mime)}catch(e){play(f)}};
-  var db=document.createElement('button');db.className='d';db.textContent='Delete';db.onclick=function(){if(confirm('Delete '+f.name+'?')){try{VPApp.deleteDownload(f.uri)}catch(e){}load()}};
-  d.appendChild(pb);d.appendChild(db);L.appendChild(d);
+  var sub=mb(f.size)+(f.dur?' · '+dur(f.dur):'')+(f.path?' · '+f.path:'');
+  d.innerHTML='<div class="nm"><b>'+(f.name||'video').replace(/</g,'&lt;')+'</b><span>'+sub.replace(/</g,'&lt;')+'</span></div>';
+  var pb=document.createElement('button');pb.textContent='Play';pb.onclick=function(){play(f)};
+  d.appendChild(pb);L.appendChild(d);
  });
 }
-var curF=null;
-function play(f){
- curF=f;
- document.getElementById('pt').textContent=f.name||'';
- var v=document.getElementById('v');v.src=f.uri;
- document.getElementById('player').style.display='flex';
- v.play().catch(function(){});
-}
-document.getElementById('cl').onclick=function(){var v=document.getElementById('v');v.pause();v.src='';document.getElementById('player').style.display='none';};
-document.getElementById('ext').onclick=function(){if(curF){try{VPApp.playDownload(curF.uri,curF.mime)}catch(e){}}};
-document.getElementById('v').onerror=function(){/* some formats (.ts) won't play in webview - offer external */ if(curF){document.getElementById('pt').textContent=(curF.name||'')+' — this format needs an external player';}};
-load();
+function loadAll(){all=parse((function(){try{return VPApp.scanAllVideos()}catch(e){return'[]'}})());render();}
+function loadDl(){dl=parse((function(){try{return VPApp.listDownloads()}catch(e){return'[]'}})());render();}
+document.getElementById('tA').onclick=function(){mode='all';this.classList.add('on');document.getElementById('tD').classList.remove('on');loadAll();};
+document.getElementById('tD').onclick=function(){mode='dl';this.classList.add('on');document.getElementById('tA').classList.remove('on');loadDl();};
+document.getElementById('search').oninput=render;
+loadAll();
 </script>
 </body></html>

@@ -1403,6 +1403,41 @@ public class MainActivity extends Activity {
             }).start();
         }
         @JavascriptInterface public void toast(final String s) { ui.post(new Runnable() { public void run() { MainActivity.this.toast(s); } }); }
+        @JavascriptInterface public void askMediaPerm() {
+            ui.post(new Runnable() { public void run() {
+                try {
+                    String p = Build.VERSION.SDK_INT >= 33 ? Manifest.permission.READ_MEDIA_VIDEO : Manifest.permission.READ_EXTERNAL_STORAGE;
+                    if (checkSelfPermission(p) != PackageManager.PERMISSION_GRANTED) requestPermissions(new String[]{ p }, 81);
+                } catch (Throwable e) { /* ignore */ }
+            }});
+        }
+        @JavascriptInterface public boolean hasMediaPerm() {
+            try { String p = Build.VERSION.SDK_INT >= 33 ? Manifest.permission.READ_MEDIA_VIDEO : Manifest.permission.READ_EXTERNAL_STORAGE; return checkSelfPermission(p) == PackageManager.PERMISSION_GRANTED; } catch (Throwable e) { return false; }
+        }
+        @JavascriptInterface public String scanAllVideos() {
+            if (t.url == null || !t.url.startsWith("file:///android_asset/")) return "[]";
+            org.json.JSONArray arr = new org.json.JSONArray();
+            try {
+                String[] proj = { MediaStore.Video.Media._ID, MediaStore.Video.Media.DISPLAY_NAME, MediaStore.Video.Media.SIZE, MediaStore.Video.Media.MIME_TYPE, MediaStore.Video.Media.DURATION, MediaStore.Video.Media.RELATIVE_PATH };
+                android.database.Cursor c2 = getContentResolver().query(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, proj, null, null, MediaStore.Video.Media.DATE_ADDED + " DESC");
+                if (c2 != null) {
+                    int n = 0;
+                    while (c2.moveToNext() && n < 2000) {
+                        long idv = c2.getLong(0);
+                        org.json.JSONObject o = new org.json.JSONObject();
+                        o.put("name", c2.getString(1));
+                        o.put("size", c2.getLong(2));
+                        o.put("mime", c2.getString(3) == null ? "video/*" : c2.getString(3));
+                        o.put("dur", c2.getLong(4));
+                        o.put("path", c2.getString(5));
+                        o.put("uri", android.content.ContentUris.withAppendedId(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, idv).toString());
+                        arr.put(o); n++;
+                    }
+                    c2.close();
+                }
+            } catch (Throwable e) { /* ignore */ }
+            return arr.toString();
+        }
         @JavascriptInterface public String listDownloads() {
             if (t.url == null || !t.url.startsWith("file:///android_asset/")) return "[]";
             org.json.JSONArray arr = new org.json.JSONArray();

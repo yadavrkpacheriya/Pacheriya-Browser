@@ -44,18 +44,24 @@
   /* ---- reading mode ---- */
   function txt(e) { return e.innerText || e.textContent || ''; }
   function best(doc) {
-    var c = doc.querySelectorAll('article, main, [role=main], .post, .entry-content, .article, #content, .content, section, div'), top = null, sc = 0;
+    var c = doc.querySelectorAll('article, main, [role=main], .post, .entry-content, .article, #content, .content, .chapter-content, .chapter, .reading-content, .text-left, .entry, section, div'), top = null, sc = 0;
     for (var i = 0; i < c.length; i++) {
-      var ps = c[i].querySelectorAll('p'), s = 0;
-      for (var j = 0; j < ps.length; j++) { var t = txt(ps[j]); if (t.length > 60 && ps[j].closest('nav,footer,aside,header') === null) s += t.length; }
+      var ps = c[i].querySelectorAll('p'), s = 0, pcount = 0;
+      for (var j = 0; j < ps.length; j++) { var t = txt(ps[j]); if (t.length > 40 && ps[j].closest('nav,footer,aside,header') === null) { s += t.length; pcount++; } }
+      /* fallback: novel sites often use bare text / <br> lines with no <p>. Score the element's own direct text too. */
+      if (pcount < 2) {
+        var own = txt(c[i]).trim();
+        if (own.length > 400 && c[i].querySelectorAll('a,nav,ul,form').length < 8 && !c[i].querySelector('article,main,section')) s = Math.max(s, own.length * 0.9);
+      }
       var links = 0, as = c[i].querySelectorAll('a');
       for (var k = 0; k < as.length; k++) links += txt(as[k]).length;
       var tot = txt(c[i]).length || 1;
-      s = s * (1 - Math.min(0.8, links / tot));
+      s = s * (1 - Math.min(0.85, links / tot));
       if (c[i].tagName === 'ARTICLE') s *= 1.3;
+      if (/chapter|reading|entry-content|post-content/i.test(c[i].className || '')) s *= 1.4;
       if (s > sc) { sc = s; top = c[i]; }
     }
-    return sc > 200 ? top : null;
+    return sc > 180 ? top : null;
   }
   function nextUrl(doc, base) {
     /* common next-chapter ids/classes used by novel sites (novelfull: #next_chap, etc.) */
@@ -100,6 +106,15 @@
       else c.style.margin = '0 0 1.05em';
       box.appendChild(c); added.push(c);
     });
+    /* fallback: container had no <p>/<li> blocks (bare-text novel page) — split its raw text into paragraphs by line breaks. */
+    if (!added.length || (added.length === 1 && title)) {
+      var raw = (el.innerText || el.textContent || '').replace(/\r/g, '');
+      var parts = raw.split(/\n{1,}/).map(function (s) { return s.trim(); }).filter(function (s) { return s.length > 1; });
+      parts.forEach(function (tx) {
+        var c = document.createElement('p'); c.textContent = tx; c.__src = tx; c.style.margin = '0 0 1.05em';
+        box.appendChild(c); added.push(c);
+      });
+    }
     return added;
   }
   /* endless reading: when the reader nears the end, the next page of the same site is fetched and added below */
@@ -118,9 +133,17 @@
   }
   function trList(ps) { ps = ps.filter(function (c) { return c.__src; }); if (!ps.length) return; tr(ps.map(function (c) { return c.__src; }), R.tl, function (out) { ps.forEach(function (c, i) { if (out[i]) c.textContent = out[i]; }); }); }
   function chrome(h) { try { VPApp.chrome(h); } catch (e) {} }
-  function on() {
+  function on() { onTry(0); }
+  /* Many sites load chapter text via JS after first render, so retry for a few seconds before giving up. */
+  function onTry(attempt) {
     var el = best(document);
-    if (!el) { try { VPApp.toast('No article text found on this page'); } catch (e) {} return; }
+    if (!el) {
+      if (attempt < 16) { setTimeout(function () { onTry(attempt + 1); }, 250); return; }
+      try { VPApp.toast('No article text found on this page'); } catch (e) {} return;
+    }
+    start(el);
+  }
+  function start(el) {
     seen = []; loaded = {}; busy = false; lastY = 0;
     ov = document.createElement('div'); ov.id = '__vpRd';
     ov.style.cssText = 'position:fixed;inset:0;z-index:2147483646;overflow:auto;-webkit-overflow-scrolling:touch;font-family:Georgia,"Noto Serif",serif';

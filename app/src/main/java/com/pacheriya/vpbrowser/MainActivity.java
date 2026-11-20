@@ -837,7 +837,7 @@ public class MainActivity extends Activity {
                 t.fallback = null;
                 if (!t.incognito && u.startsWith("http")) Store.addHistory(sp, t.title, u);
                 if (u.startsWith("http")) ui.postDelayed(new Runnable() { public void run() { if (t == cur) fitZoom(t, 0); } }, 900);
-                if (!autoTr.isEmpty() && u.startsWith("http")) v.evaluateJavascript(readerJs + ";window.__vpReader.page('" + autoTr + "')", null);
+                if (u.startsWith("http")) v.evaluateJavascript(readerJs + ";window.__vpReader.page('" + autoTr + "')", null);
                 if (picTr && u.startsWith("http")) v.evaluateJavascript(ocrJs + ";window.__vpPic&&window.__vpPic.start()", null);
             }
         });

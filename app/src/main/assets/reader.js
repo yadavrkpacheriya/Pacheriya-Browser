@@ -80,6 +80,20 @@
     /* require a real chapter's worth of text; otherwise signal "keep waiting" so onTry retries for the lazy content */
     return (top && txt(top).trim().length > (relax ? 200 : 500)) ? top : null;
   }
+  /* derive a sibling chapter URL by stepping the last number in the path (chapter-12 -> chapter-13, /82723/5 -> /82723/6) */
+  function bumpChapter(base, dir) {
+    try {
+      var u = new URL(base); var p = u.pathname;
+      // match the last run of digits in the path (optionally after chapter/ch/c- separators)
+      var m = p.match(/(\d+)(?!.*\d)/);
+      if (!m) return '';
+      var n = parseInt(m[1], 10) + dir;
+      if (n < 1) return '';
+      var np = p.slice(0, m.index) + n + p.slice(m.index + m[1].length);
+      u.pathname = np; u.hash = '';
+      return u.href;
+    } catch (e) { return ''; }
+  }
   function nextUrl(doc, base) {
     /* common next-chapter ids/classes used by novel sites (novelfull: #next_chap, etc.) */
     var c = doc.querySelector('#next_chap[href], a#next[href], a.next_chapter[href], a[rel~=next][href], link[rel~=next][href], a[class*=next-chap][href], a[id*=next][href]'), i, as;
@@ -88,8 +102,8 @@
       for (i = 0; i < as.length && !c; i++) { if (/(^|[\s_-])next([\s_-]|$)/i.test((as[i].className || '') + ' ' + (as[i].id || '')) && !/disabled/i.test(as[i].className || '')) c = as[i]; }
       /* icon-only next button: an <a> whose only text is a > arrow or that holds a right-chevron icon */
       for (i = 0; i < as.length && !c; i++) { var tt = txt(as[i]).trim(); var cl = (as[i].className || '') + (as[i].querySelector && as[i].querySelector('i') ? as[i].querySelector('i').className : ''); if ((/^[>›»→]$/.test(tt) || /fa-(angle|chevron|arrow)-right|next/i.test(cl)) && as[i].getAttribute('href')) c = as[i]; } }
-    if (!c) return '';
-    try { var u = new URL(c.getAttribute('href'), base); if (u.origin !== location.origin || !/^https?:$/.test(u.protocol)) return ''; u.hash = ''; var cu = new URL(base); cu.hash = ''; return u.href === cu.href ? '' : u.href; } catch (e) { return ''; }
+    if (!c) return bumpChapter(base, 1);
+    try { var u = new URL(c.getAttribute('href'), base); if (u.origin !== location.origin || !/^https?:$/.test(u.protocol)) return bumpChapter(base, 1); u.hash = ''; var cu = new URL(base); cu.hash = ''; return u.href === cu.href ? bumpChapter(base, 1) : u.href; } catch (e) { return bumpChapter(base, 1); }
   }
   function prevUrl(doc, base) {
     var c = doc.querySelector('#prev_chap[href], a#prev[href], a.prev_chapter[href], a[rel~=prev][href], link[rel~=prev][href], a[class*=prev-chap][href], a[id*=prev][href]'), i, as;
@@ -97,8 +111,8 @@
       for (i = 0; i < as.length && !c; i++) { var t = txt(as[i]).replace(/\s+/g, ' ').trim(); if (t.length < 26 && /^(prev|prev(ious)?( (page|chapter|part|post|episode))?|newer posts?|[‹«<←] ?prev|[‹«←])$/i.test(t)) c = as[i]; }
       for (i = 0; i < as.length && !c; i++) { if (/(^|[\s_-])prev(ious)?([\s_-]|$)/i.test((as[i].className || '') + ' ' + (as[i].id || '')) && !/disabled/i.test(as[i].className || '')) c = as[i]; }
       for (i = 0; i < as.length && !c; i++) { var tt = txt(as[i]).trim(); var cl = (as[i].className || '') + (as[i].querySelector && as[i].querySelector('i') ? as[i].querySelector('i').className : ''); if ((/^[<‹«←]$/.test(tt) || /fa-(angle|chevron|arrow)-left|prev/i.test(cl)) && as[i].getAttribute('href')) c = as[i]; } }
-    if (!c) return '';
-    try { var u = new URL(c.getAttribute('href'), base); if (u.origin !== location.origin || !/^https?:$/.test(u.protocol)) return ''; u.hash = ''; var cu = new URL(base); cu.hash = ''; return u.href === cu.href ? '' : u.href; } catch (e) { return ''; }
+    if (!c) return bumpChapter(base, -1);
+    try { var u = new URL(c.getAttribute('href'), base); if (u.origin !== location.origin || !/^https?:$/.test(u.protocol)) return bumpChapter(base, -1); u.hash = ''; var cu = new URL(base); cu.hash = ''; return u.href === cu.href ? bumpChapter(base, -1) : u.href; } catch (e) { return bumpChapter(base, -1); }
   }
   var ov, box, bar, seen = [], nxt = '', busy = false, loaded = {}, lastY = 0;
   function paint() {
@@ -146,19 +160,73 @@
     }
     return added;
   }
-  /* endless reading: when the reader nears the end, the next page of the same site is fetched and added below */
+  /* endless reading, two strategies tried in order:
+     1) LIVE: nudge the real page (which the overlay normally blocks from scrolling) so the site's OWN infinite scroll
+        loads the next chapter, then pull the newly-added paragraphs into the reader. Works on WTR-LAB etc.
+     2) FETCH: if the site has no built-in endless scroll, fetch the next chapter URL and append it.
+     3) If that next page is JS-rendered (empty shell), navigate to it; reader reopens itself. */
+  var liveSeen = null, liveTries = 0;
+  function snapshotLive() {
+    // remember the text we've already shown so we can detect what the site adds later
+    liveSeen = {};
+    Array.prototype.forEach.call(box.children, function (c) { if (c.__src) liveSeen[c.__src.slice(0, 60)] = 1; });
+  }
+  function harvestLive() {
+    // scan the whole live page for readable paragraphs the site has added and that aren't in the reader yet
+    var src = document.querySelectorAll('article p, main p, [class*="chapter"] p, [class*="content"] p, [class*="reading"] p, p');
+    var addedAny = false, buf = [];
+    Array.prototype.forEach.call(src, function (p) {
+      if (p.closest('#__vpRd')) return;                       // skip the reader's own copies
+      if (p.closest('nav,footer,aside,header,form,' + AD_SEL)) return;
+      var t = (p.innerText || p.textContent || '').trim();
+      if (t.length < 2) return;
+      if (t.length < 600 && JUNK.test(t)) return;             // skip ad/contributor footer lines
+      if (liveSeen[t.slice(0, 60)]) return;
+      liveSeen[t.slice(0, 60)] = 1; buf.push(t);
+    });
+    if (buf.length) {
+      var hr = document.createElement('hr'); hr.style.cssText = 'border:0;border-top:1px solid #8885;margin:22px 0'; box.appendChild(hr); hr.__sep = 1;
+      var add = [];
+      buf.forEach(function (t) { var c = document.createElement('p'); c.textContent = t; c.__src = t; c.style.margin = '0 0 1.05em'; box.appendChild(c); add.push(c); });
+      paint(); if (R.tl) trList(add); addedAny = true;
+    }
+    return addedAny;
+  }
   function more() {
-    if (busy || !nxt || !R.on || loaded[nxt]) return;
-    var u = nxt; busy = true; loaded[u] = 1;
+    if (busy || !R.on) return;
+    busy = true;
+    if (liveSeen === null) snapshotLive();
+    // strategy 1: push the real page to the bottom so its own loader fires, then harvest new paragraphs
+    var beforeH = document.documentElement.scrollHeight;
+    try { window.scrollTo(0, document.documentElement.scrollHeight); } catch (e) {}
+    setTimeout(function () {
+      var got = harvestLive();
+      var grew = document.documentElement.scrollHeight > beforeH + 200;
+      busy = false;
+      if (got || grew) { liveTries = 0; return; }             // site is feeding us content — keep riding it
+      // strategy 2: no built-in endless scroll here — fall back to fetching the next URL
+      if (++liveTries >= 2) fetchNext();
+    }, 900);
+  }
+  function fetchNext() {
+    if (!nxt || loaded[nxt]) return;
+    var u = nxt; loaded[u] = 1; busy = true;
     fetch(u, { credentials: 'include' }).then(function (r) { if (!r.ok) throw 0; return r.text(); }).then(function (h) {
       var d = new DOMParser().parseFromString(h, 'text/html'), el = best(d);
+      if (!el) { navTo(u); return; }
       nxt = nextUrl(d, u);
-      if (!el) { nxt = ''; return; }
       var hr = document.createElement('hr'); hr.style.cssText = 'border:0;border-top:1px solid #8885;margin:28px 0'; box.appendChild(hr);
       var h1 = d.querySelector('h1'), add = fill(el, u, (h1 && txt(h1).trim()) || d.title || '');
       paint();
       if (R.tl) trList(add);
-    }).catch(function () { nxt = ''; }).then(function () { busy = false; });
+    }).catch(function () { navTo(u); }).then(function () { busy = false; });
+  }
+  /* navigate to a chapter and have reader mode open itself again on the new page (seamless: user never leaves reader) */
+  function navTo(u) {
+    if (!u) return;
+    try { sessionStorage.setItem('__vpReopen', '1'); } catch (e) {}
+    try { if (R.tl) sessionStorage.setItem('__vpReopenTl', R.tl); } catch (e) {}
+    location.href = u;
   }
   function trList(ps) { ps = ps.filter(function (c) { return c.__src; }); if (!ps.length) return; tr(ps.map(function (c) { return c.__src; }), R.tl, function (out) { ps.forEach(function (c, i) { if (out[i]) c.textContent = out[i]; }); }); }
   function chrome(h) { try { VPApp.chrome(h); } catch (e) {} }
@@ -182,7 +250,7 @@
     function btn(t, f) { var b = document.createElement('button'); b.className = 'vpb'; b.textContent = t; b.style.cssText = 'background:none;border:1px solid;border-radius:8px;padding:7px 12px;font:14px sans-serif;flex:none'; b.onclick = function (e) { e.stopPropagation(); f(); }; bar.appendChild(b); return b; }
     var prv = prevUrl(document, location.href);
     nxt = nextUrl(document, location.href);
-    var pB = btn('‹ Prev', function () { if (prv) { try { VPApp.toast && VPApp.toast('Loading previous chapter…'); } catch (e) {} location.href = prv; } });
+    var pB = btn('‹ Prev', function () { if (prv) { try { VPApp.toast && VPApp.toast('Loading previous chapter…'); } catch (e) {} navTo(prv); } });
     if (!prv) pB.style.opacity = '.4';
     btn('A-', function () { fs = Math.max(13, fs - 2); paint(); });
     btn('A+', function () { fs = Math.min(34, fs + 2); paint(); });
@@ -193,7 +261,7 @@
       tb.textContent = R.tl ? 'Translate: ' + R.tl.toUpperCase() : 'Translate';
       doTr();
     });
-    var nB = btn('Next ›', function () { if (nxt) { try { VPApp.toast && VPApp.toast('Loading next chapter…'); } catch (e) {} location.href = nxt; } });
+    var nB = btn('Next ›', function () { if (nxt) { try { VPApp.toast && VPApp.toast('Loading next chapter…'); } catch (e) {} navTo(nxt); } });
     if (!nxt) nB.style.opacity = '.4';
     btn('✕', off);
     box = document.createElement('div');
@@ -217,6 +285,22 @@
     if (!R.tl) { ps.forEach(function (c) { c.textContent = c.__src; }); return; }
     tr(ps.map(function (c) { return c.__src; }), R.tl, function (out) { ps.forEach(function (c, i) { if (out[i]) c.textContent = out[i]; }); });
   }
-  function off() { if (ov && ov.parentNode) ov.parentNode.removeChild(ov); R.on = false; chrome(false); }
+  function off() { if (ov && ov.parentNode) ov.parentNode.removeChild(ov); R.on = false; chrome(false); try { sessionStorage.removeItem('__vpReopen'); } catch (e) {} }
   R.toggle = function () { if (R.on) off(); else on(); };
+  /* page(): called on every load. If the user was reading and tapped Next/Prev (or we navigated for them),
+     reopen reader mode automatically so they never leave it. Retries while the JS page builds its content. */
+  R.page = function (autoTl) {
+    if (autoTl) R.auto = autoTl;
+    var reopen = false;
+    try { reopen = sessionStorage.getItem('__vpReopen') === '1'; } catch (e) {}
+    if (!reopen || R.on) return;
+    try { var tl = sessionStorage.getItem('__vpReopenTl'); if (tl) R.auto = tl; } catch (e) {}
+    var tries = 0;
+    (function waitAndOpen() {
+      if (R.on) return;
+      var el = best(document);
+      if (el) { on(); return; }
+      if (++tries < 40) setTimeout(waitAndOpen, 300);   // keep trying ~12s while the chapter renders
+    })();
+  };
 })();

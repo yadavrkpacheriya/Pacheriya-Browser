@@ -2,7 +2,15 @@
   if (window.__vpReader) return;
   var R = window.__vpReader = { on: false, tl: '', cbs: {}, n: 0 };
   var theme = 0, fs = 19;
-  var TH = [['#fbfbf8', '#222', '#555'], ['#f4ecd8', '#3b3226', '#6b5d48'], ['#15161a', '#d8d8d8', '#9aa']];
+  /* [background, text, border, linkColor, name] */
+  var TH = [
+    ['#fbfbf8', '#222222', '#555555', '#1a56c4', 'Light'],
+    ['#f4ecd8', '#3b3226', '#6b5d48', '#8a5a1a', 'Sepia'],
+    ['#15161a', '#d8d8d8', '#9aa0aa', '#8ab4ff', 'Dark'],
+    ['#000000', '#c8c8c8', '#444444', '#6ea8ff', 'Black (OLED)'],
+    ['#e8f0e4', '#24301f', '#5a6b4f', '#2c6e2c', 'Mint'],
+    ['#fff8e1', '#2b2416', '#8a7a4a', '#9a5a00', 'Cream']
+  ];
   /* ---- translation helper (native does the request) ---- */
   window.__vpTr = function (id, txt) { var f = R.cbs[id]; delete R.cbs[id]; if (f) f(txt); };
   function tr(lines, tl, done) {
@@ -83,6 +91,15 @@
     if (!c) return '';
     try { var u = new URL(c.getAttribute('href'), base); if (u.origin !== location.origin || !/^https?:$/.test(u.protocol)) return ''; u.hash = ''; var cu = new URL(base); cu.hash = ''; return u.href === cu.href ? '' : u.href; } catch (e) { return ''; }
   }
+  function prevUrl(doc, base) {
+    var c = doc.querySelector('#prev_chap[href], a#prev[href], a.prev_chapter[href], a[rel~=prev][href], link[rel~=prev][href], a[class*=prev-chap][href], a[id*=prev][href]'), i, as;
+    if (!c) { as = doc.querySelectorAll('a[href]');
+      for (i = 0; i < as.length && !c; i++) { var t = txt(as[i]).replace(/\s+/g, ' ').trim(); if (t.length < 26 && /^(prev|prev(ious)?( (page|chapter|part|post|episode))?|newer posts?|[‹«<←] ?prev|[‹«←])$/i.test(t)) c = as[i]; }
+      for (i = 0; i < as.length && !c; i++) { if (/(^|[\s_-])prev(ious)?([\s_-]|$)/i.test((as[i].className || '') + ' ' + (as[i].id || '')) && !/disabled/i.test(as[i].className || '')) c = as[i]; }
+      for (i = 0; i < as.length && !c; i++) { var tt = txt(as[i]).trim(); var cl = (as[i].className || '') + (as[i].querySelector && as[i].querySelector('i') ? as[i].querySelector('i').className : ''); if ((/^[<‹«←]$/.test(tt) || /fa-(angle|chevron|arrow)-left|prev/i.test(cl)) && as[i].getAttribute('href')) c = as[i]; } }
+    if (!c) return '';
+    try { var u = new URL(c.getAttribute('href'), base); if (u.origin !== location.origin || !/^https?:$/.test(u.protocol)) return ''; u.hash = ''; var cu = new URL(base); cu.hash = ''; return u.href === cu.href ? '' : u.href; } catch (e) { return ''; }
+  }
   var ov, box, bar, seen = [], nxt = '', busy = false, loaded = {}, lastY = 0;
   function paint() {
     var t = TH[theme];
@@ -90,7 +107,7 @@
     box.style.fontSize = fs + 'px';
     bar.style.background = t[0]; bar.style.borderBottom = '1px solid ' + t[2] + '55';
     Array.prototype.forEach.call(ov.querySelectorAll('.vpb'), function (b) { b.style.color = t[1]; b.style.borderColor = t[2]; });
-    Array.prototype.forEach.call(ov.querySelectorAll('a'), function (a) { a.style.color = theme === 2 ? '#8ab4ff' : '#1a56c4'; });
+    Array.prototype.forEach.call(ov.querySelectorAll('a'), function (a) { a.style.color = t[3]; });
   }
   function fill(el, base, title) {
     var added = [];
@@ -161,23 +178,28 @@
     ov = document.createElement('div'); ov.id = '__vpRd';
     ov.style.cssText = 'position:fixed;inset:0;z-index:2147483646;overflow:auto;-webkit-overflow-scrolling:touch;font-family:Georgia,"Noto Serif",serif';
     bar = document.createElement('div');
-    bar.style.cssText = 'position:sticky;top:0;display:flex;gap:8px;justify-content:center;padding:8px;font:14px sans-serif;z-index:2;transition:transform .2s';
-    function btn(t, f) { var b = document.createElement('button'); b.className = 'vpb'; b.textContent = t; b.style.cssText = 'background:none;border:1px solid;border-radius:8px;padding:7px 12px;font:14px sans-serif'; b.onclick = function (e) { e.stopPropagation(); f(); }; bar.appendChild(b); return b; }
+    bar.style.cssText = 'position:sticky;top:0;display:flex;gap:6px;justify-content:flex-start;align-items:center;padding:8px;font:14px sans-serif;z-index:2;transition:transform .2s;overflow-x:auto;-webkit-overflow-scrolling:touch;white-space:nowrap';
+    function btn(t, f) { var b = document.createElement('button'); b.className = 'vpb'; b.textContent = t; b.style.cssText = 'background:none;border:1px solid;border-radius:8px;padding:7px 12px;font:14px sans-serif;flex:none'; b.onclick = function (e) { e.stopPropagation(); f(); }; bar.appendChild(b); return b; }
+    var prv = prevUrl(document, location.href);
+    nxt = nextUrl(document, location.href);
+    var pB = btn('‹ Prev', function () { if (prv) { try { VPApp.toast && VPApp.toast('Loading previous chapter…'); } catch (e) {} location.href = prv; } });
+    if (!prv) pB.style.opacity = '.4';
     btn('A-', function () { fs = Math.max(13, fs - 2); paint(); });
     btn('A+', function () { fs = Math.min(34, fs + 2); paint(); });
-    btn('Theme', function () { theme = (theme + 1) % 3; paint(); });
+    var thB = btn('Theme: ' + TH[theme][4], function () { theme = (theme + 1) % TH.length; thB.textContent = 'Theme: ' + TH[theme][4]; paint(); });
     var tb = btn('Translate', function () {
       var cycle = ['', 'en', 'hi'];
       R.tl = cycle[(cycle.indexOf(R.tl) + 1) % 3];
       tb.textContent = R.tl ? 'Translate: ' + R.tl.toUpperCase() : 'Translate';
       doTr();
     });
+    var nB = btn('Next ›', function () { if (nxt) { try { VPApp.toast && VPApp.toast('Loading next chapter…'); } catch (e) {} location.href = nxt; } });
+    if (!nxt) nB.style.opacity = '.4';
     btn('✕', off);
     box = document.createElement('div');
     box.style.cssText = 'max-width:680px;margin:0 auto;padding:12px 18px 80px;line-height:1.75;word-wrap:break-word';
     var h1 = document.querySelector('h1');
     fill(el, location.href, (h1 && h1.innerText.trim()) || document.title);
-    nxt = nextUrl(document, location.href);
     ov.appendChild(bar); ov.appendChild(box); document.documentElement.appendChild(ov);
     /* menus hide while reading: scrolling down hides the reader buttons, a tap or scrolling up brings them back */
     function showBar(s) { bar.style.transform = s ? 'none' : 'translateY(-110%)'; bar.__hid = !s; }

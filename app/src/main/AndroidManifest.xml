@@ -14,6 +14,16 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <uses-feature android:name="android.hardware.camera" android:required="false"/>
     <uses-feature android:name="android.hardware.location" android:required="false"/>
+    <!-- Android 11+ package visibility: lets the app see dialer / SMS / email / WhatsApp / Telegram so tel:, sms:, mailto:, whatsapp:, tg: links resolve and launch. -->
+    <queries>
+        <intent><action android:name="android.intent.action.DIAL"/><data android:scheme="tel"/></intent>
+        <intent><action android:name="android.intent.action.SENDTO"/><data android:scheme="smsto"/></intent>
+        <intent><action android:name="android.intent.action.SENDTO"/><data android:scheme="mailto"/></intent>
+        <intent><action android:name="android.intent.action.VIEW"/><data android:scheme="https"/></intent>
+        <package android:name="com.whatsapp"/>
+        <package android:name="com.whatsapp.w4b"/>
+        <package android:name="org.telegram.messenger"/>
+    </queries>
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
     <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>

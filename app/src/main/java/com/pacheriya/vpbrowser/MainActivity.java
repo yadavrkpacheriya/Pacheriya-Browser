@@ -1056,6 +1056,33 @@ public class MainActivity extends Activity {
         final String ex = h.getExtra();
         int ty = h.getType();
         if (ex == null) return false;
+        // Phone number (tel: link or a number WebView detected): offer Call / WhatsApp / SMS / Copy.
+        if (ty == WebView.HitTestResult.PHONE_TYPE) {
+            final String num = ex.replaceAll("[^+0-9]", "");
+            new AlertDialog.Builder(this).setTitle(ex)
+                .setItems(new String[]{"Call", "WhatsApp", "Send SMS", "Copy number"}, new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface d, int which) {
+                        try {
+                            if (which == 0) startActivity(new Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + num)));
+                            else if (which == 1) { String w = num.startsWith("+") ? num.substring(1) : num; startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://wa.me/" + w))); }
+                            else if (which == 2) startActivity(new Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:" + num)));
+                            else copy(num);
+                        } catch (Exception e) { toast("No app available for that"); }
+                    }
+                }).show();
+            return true;
+        }
+        if (ty == WebView.HitTestResult.EMAIL_TYPE) {
+            final String em = ex;
+            new AlertDialog.Builder(this).setTitle(ex)
+                .setItems(new String[]{"Send email", "Copy address"}, new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface d, int which) {
+                        try { if (which == 0) startActivity(new Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:" + em))); else copy(em); }
+                        catch (Exception e) { toast("No email app"); }
+                    }
+                }).show();
+            return true;
+        }
         final boolean link = ty == WebView.HitTestResult.SRC_ANCHOR_TYPE || ty == WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE;
         final boolean img = ty == WebView.HitTestResult.IMAGE_TYPE;
         if (!link && !img) return false;
@@ -1208,13 +1235,26 @@ public class MainActivity extends Activity {
             toast("Couldn't open that link");
             return true;
         }
-        // magnet, mailto, tel, and app schemes like upi://, kotak://, tez://, whatsapp:// etc.
+        // Phone / SMS / email: use the right action and do NOT require CATEGORY_BROWSABLE (dialer/SMS apps don't register it).
+        try {
+            if ("tel".equals(sc)) {
+                startActivity(new Intent(Intent.ACTION_DIAL, Uri.parse(u)));   // opens dialer with the number prefilled
+                return true;
+            }
+            if ("sms".equals(sc) || "smsto".equals(sc) || "mailto".equals(sc)) {
+                startActivity(new Intent(Intent.ACTION_SENDTO, Uri.parse(u)));
+                return true;
+            }
+        } catch (Exception e) { toast("No app available for this"); return true; }
+        // magnet, and app schemes like upi://, whatsapp://, tg://, intent fallbacks, etc.
         try {
             Intent in = new Intent(Intent.ACTION_VIEW, Uri.parse(u));
-            in.addCategory(Intent.CATEGORY_BROWSABLE);
             if (in.resolveActivity(getPackageManager()) != null) startActivity(in);
-            else toast("No app installed to open this");
-        } catch (Exception e) { toast("No app can open this link"); }
+            else { startActivity(in); } // let Android show its own chooser/handler even if resolve is empty
+        } catch (Exception e) {
+            if (u.startsWith("whatsapp")) { try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=com.whatsapp"))); } catch (Exception x) { toast("WhatsApp not installed"); } }
+            else toast("No app can open this link");
+        }
         return true;
     }
 

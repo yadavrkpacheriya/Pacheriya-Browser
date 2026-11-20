@@ -29,6 +29,19 @@ final class AdBlock {
     private static final String[] PATHS = { "/pagead/", "/api/stats/ads", "/ptracking?" };
     private static final HashSet<String> SET = new HashSet<>(Arrays.asList(HOSTS));
 
+    /** Throwaway popunder/redirect domains: cheap TLDs commonly used for one-off ad hops. Not a block of the TLD for
+     *  normal navigation — only used by the pop-up / cross-site-redirect guards as an extra signal. */
+    private static final String[] SKETCHY_TLD = { ".cfd", ".sbs", ".click", ".top", ".lol", ".cyou", ".rest", ".quest", ".bond", ".icu", ".monster", ".makeup", ".skin", ".hair", ".boats", ".autos", ".mom", ".beauty", ".fun", ".buzz" };
+    static boolean sketchyHost(String url) {
+        try {
+            String host = Uri.parse(url).getHost();
+            if (host == null) return false;
+            String h = host.toLowerCase(Locale.ROOT);
+            for (String t : SKETCHY_TLD) if (h.endsWith(t)) return true;
+        } catch (Exception e) { /* ignore */ }
+        return false;
+    }
+
     static boolean blocked(String url) {
         try {
             String host = Uri.parse(url).getHost();

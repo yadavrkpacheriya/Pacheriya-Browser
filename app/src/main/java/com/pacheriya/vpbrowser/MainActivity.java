@@ -100,6 +100,8 @@ public class MainActivity extends Activity {
         long loadStart;
         long lastTap;     // when the user last physically touched this page
         String pageHost;  // host of the page the user actually navigated to
+        boolean opened;   // this tab was opened by a page (window.open), not by the user
+        boolean firstNav = true; // still waiting for this tab's first navigation
         String altScheme;
         androidx.swiperefreshlayout.widget.SwipeRefreshLayout swipe;
         boolean panelOpen, autoShown;
@@ -736,12 +738,20 @@ public class MainActivity extends Activity {
                 // (idle redirects, refresh redirects, tap-hijack pop-unders). Only when the blocker is on.
                 if (adblock && r.isForMainFrame() && ("http".equals(sc) || "https".equals(sc))) {
                     try {
+                        String full = r.getUrl().toString();
                         String dest = r.getUrl().getHost();
+                        boolean adHost = AdBlock.blocked(full), sketchy = AdBlock.sketchyHost(full);
+                        // A page-opened (window.open) tab whose first stop is an ad / throwaway host is a pop-under: kill the tab.
+                        if (t.opened && t.firstNav && (adHost || sketchy)) {
+                            final Tab dead = t;
+                            Diag.bump("popups_blocked");
+                            ui.post(new Runnable() { public void run() { closeTab(dead); toast("Blocked a pop-up ad"); } });
+                            return true;
+                        }
                         long since = System.currentTimeMillis() - t.lastTap;
                         boolean recentTap = since >= 0 && since < 1200;
                         boolean crossSite = t.pageHost != null && dest != null && !reg(dest).equals(reg(t.pageHost));
-                        boolean adHost = AdBlock.blocked(r.getUrl().toString());
-                        if ((adHost || crossSite) && !recentTap && t.pageHost != null) {
+                        if ((adHost || sketchy || crossSite) && !recentTap && t.pageHost != null) {
                             Diag.bump("redirects_blocked");
                             final String blocked = dest;
                             ui.post(new Runnable() { public void run() { toast("Blocked a redirect to " + blocked); } });
@@ -763,6 +773,15 @@ public class MainActivity extends Activity {
             @Override public void onPageStarted(WebView v, String u, Bitmap f) {
                 t.url = u;
                 t.loadStart = System.currentTimeMillis();
+                // A pop-under tab whose first page is an ad / throwaway host: close it on sight.
+                if (adblock && t.opened && t.firstNav && u != null && u.startsWith("http") && (AdBlock.blocked(u) || AdBlock.sketchyHost(u))) {
+                    final Tab dead = t;
+                    Diag.bump("popups_blocked");
+                    try { v.stopLoading(); } catch (Throwable ig) {}
+                    ui.post(new Runnable() { public void run() { closeTab(dead); toast("Blocked a pop-up ad"); } });
+                    return;
+                }
+                t.firstNav = false;
                 // Record the host the user legitimately landed on (first load, a recent tap, or an in-app load like the address bar / reload).
                 try {
                     String h = Uri.parse(u).getHost();
@@ -849,8 +868,19 @@ public class MainActivity extends Activity {
             @Override public void onHideCustomView() { exitFullscreen(); }
 
             @Override public boolean onCreateWindow(WebView v, boolean isDialog, boolean isUserGesture, Message resultMsg) {
-                if (!isUserGesture && adblock) return false;
+                if (adblock) {
+                    // Pop-under / new-tab ad: a hijacked tap still reports a "gesture", so also require that the user
+                    // really touched THIS page in the last ~1.2s AND that the opener wasn't itself an ad frame.
+                    long since = System.currentTimeMillis() - t.lastTap;
+                    boolean recentTap = since >= 0 && since < 1200;
+                    if (!isUserGesture || !recentTap) { Diag.bump("popups_blocked"); return false; }
+                    // Peek at the href the popup is trying to open; block if it's a known ad host or a throwaway popunder TLD.
+                    String href = null;
+                    try { android.os.Message m2 = v.getHandler().obtainMessage(); v.requestFocusNodeHref(m2); Object u = m2.getData().get("url"); if (u != null) href = u.toString(); } catch (Throwable ig) {}
+                    if (href != null && (AdBlock.blocked(href) || AdBlock.sketchyHost(href))) { Diag.bump("popups_blocked"); return false; }
+                }
                 Tab nt = newTab(null, t.incognito);
+                nt.opened = true;
                 WebView.WebViewTransport tr = (WebView.WebViewTransport) resultMsg.obj;
                 tr.setWebView(nt.wv);
                 resultMsg.sendToTarget();

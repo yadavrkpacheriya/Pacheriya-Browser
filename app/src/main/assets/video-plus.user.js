@@ -24,11 +24,23 @@
     var bad = function (u) {
       try { var h = new URL(u, location.href).hostname; return HOSTS.some(function (d) { return h === d || h.slice(-d.length - 1) === '.' + d; }); } catch (e) { return false; }
     };
+    var SKETCHY = /\.(cfd|sbs|click|top|lol|cyou|rest|quest|bond|icu|monster|makeup|skin|hair|boats|autos|mom|beauty|fun|buzz)$/i;
+    function sketchy(u) { try { return SKETCHY.test(new URL(u, location.href).hostname); } catch (e) { return false; } }
     var _open = window.open;
     window.open = function (u) {
-      try { if (u && new URL(u, location.href).hostname === location.hostname) return _open.apply(this, arguments); } catch (e) {}
+      try { if (u && !sketchy(u) && !bad(u) && new URL(u, location.href).hostname === location.hostname) return _open.apply(this, arguments); } catch (e) {}
       return null;
     };
+    // block target=_blank / cross-site anchor taps that open pop-under ad tabs
+    document.addEventListener('click', function (e) {
+      var a = e.target && e.target.closest && e.target.closest('a[href]');
+      if (!a || !a.href) return;
+      try {
+        var h = new URL(a.href, location.href).hostname;
+        var off = h !== location.hostname && h.slice(-location.hostname.length - 1) !== '.' + location.hostname;
+        if ((a.target === '_blank' && off) || sketchy(a.href) || bad(a.href)) { e.preventDefault(); e.stopPropagation(); }
+      } catch (x) {}
+    }, true);
     [HTMLScriptElement, HTMLIFrameElement, HTMLImageElement].forEach(function (C) {
       var d = Object.getOwnPropertyDescriptor(C.prototype, 'src');
       if (!d || !d.set) return;

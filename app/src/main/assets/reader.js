@@ -43,9 +43,13 @@
   };
   /* ---- reading mode ---- */
   function txt(e) { return e.innerText || e.textContent || ''; }
-  function best(doc) {
-    var c = doc.querySelectorAll('article, main, [role=main], .post, .entry-content, .article, #content, .content, .chapter-content, .chapter, .reading-content, .text-left, .entry, section, div'), top = null, sc = 0;
+  /* ad-blocker nags / paywall notices that masquerade as the article — never pick these */
+  var JUNK = /disable your ad ?block|turn off your ad ?block|whitelist|adblock detected|please support our (web)?site|continue enjoying free|subscribe to (read|continue)|you (have|'ve) reached your|create a free account to (read|continue)|log ?in to (read|continue)/i;
+  function isJunk(el) { var t = (el.innerText || el.textContent || '').trim(); return t.length < 600 && JUNK.test(t); }
+  function best(doc, relax) {
+    var c = doc.querySelectorAll('article, main, [role=main], .post, .entry-content, .article, #content, .content, .chapter-content, .chapter-body, #chapter-content, .chapter, .reading-content, .text-left, .entry, section, div'), top = null, sc = 0;
     for (var i = 0; i < c.length; i++) {
+      if (isJunk(c[i])) continue;
       var ps = c[i].querySelectorAll('p'), s = 0, pcount = 0;
       for (var j = 0; j < ps.length; j++) { var t = txt(ps[j]); if (t.length > 40 && ps[j].closest('nav,footer,aside,header') === null) { s += t.length; pcount++; } }
       /* fallback: novel sites often use bare text / <br> lines with no <p>. Score the element's own direct text too. */
@@ -61,7 +65,8 @@
       if (/chapter|reading|entry-content|post-content/i.test(c[i].className || '')) s *= 1.4;
       if (s > sc) { sc = s; top = c[i]; }
     }
-    return sc > 180 ? top : null;
+    /* require a real chapter's worth of text; otherwise signal "keep waiting" so onTry retries for the lazy content */
+    return (top && txt(top).trim().length > (relax ? 200 : 500)) ? top : null;
   }
   function nextUrl(doc, base) {
     /* common next-chapter ids/classes used by novel sites (novelfull: #next_chap, etc.) */
@@ -138,8 +143,9 @@
   function onTry(attempt) {
     var el = best(document);
     if (!el) {
-      if (attempt < 16) { setTimeout(function () { onTry(attempt + 1); }, 250); return; }
-      try { VPApp.toast('No article text found on this page'); } catch (e) {} return;
+      if (attempt < 32) { setTimeout(function () { onTry(attempt + 1); }, 250); return; }
+      el = best(document, true); /* last resort: accept a shorter non-junk block so the reader still opens */
+      if (!el) { try { VPApp.toast('No article text found on this page'); } catch (e) {} return; }
     }
     start(el);
   }

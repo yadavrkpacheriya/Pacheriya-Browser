@@ -98,6 +98,8 @@ public class MainActivity extends Activity {
         final java.util.HashSet<String> covered = new java.util.HashSet<String>();
         int gen, pending, uaMode = -1; // -1 = follow global
         long loadStart;
+        long lastTap;     // when the user last physically touched this page
+        String pageHost;  // host of the page the user actually navigated to
         String altScheme;
         androidx.swiperefreshlayout.widget.SwipeRefreshLayout swipe;
         boolean panelOpen, autoShown;
@@ -650,6 +652,12 @@ public class MainActivity extends Activity {
     // ---------------- WebView ----------------
     private WebView makeWebView(final Tab t) {
         WebView w = new WebView(this);
+        w.setOnTouchListener(new View.OnTouchListener() {
+            public boolean onTouch(View v, android.view.MotionEvent e) {
+                if (e.getActionMasked() == android.view.MotionEvent.ACTION_DOWN) t.lastTap = System.currentTimeMillis();
+                return false;
+            }
+        });
         w.setOnScrollChangeListener(new View.OnScrollChangeListener() {
             public void onScrollChange(View v, int x, int y, int ox, int oy) {
                 if (barsHidden && oy - y > dp(14)) showChrome();
@@ -724,6 +732,23 @@ public class MainActivity extends Activity {
 
             @Override public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest r) {
                 String sc = r.getUrl().getScheme();
+                // Redirect guard: block a main-frame jump to a different site that wasn't driven by a real, recent tap
+                // (idle redirects, refresh redirects, tap-hijack pop-unders). Only when the blocker is on.
+                if (adblock && r.isForMainFrame() && ("http".equals(sc) || "https".equals(sc))) {
+                    try {
+                        String dest = r.getUrl().getHost();
+                        long since = System.currentTimeMillis() - t.lastTap;
+                        boolean recentTap = since >= 0 && since < 1200;
+                        boolean crossSite = t.pageHost != null && dest != null && !reg(dest).equals(reg(t.pageHost));
+                        boolean adHost = AdBlock.blocked(r.getUrl().toString());
+                        if ((adHost || crossSite) && !recentTap && t.pageHost != null) {
+                            Diag.bump("redirects_blocked");
+                            final String blocked = dest;
+                            ui.post(new Runnable() { public void run() { toast("Blocked a redirect to " + blocked); } });
+                            return true;
+                        }
+                    } catch (Throwable ig) {}
+                }
                 if (r.isForMainFrame() && "http".equals(sc)) {
                     String up = upgrade(t, r.getUrl().toString());
                     if (!up.equals(r.getUrl().toString())) { v.loadUrl(up); return true; }
@@ -738,6 +763,14 @@ public class MainActivity extends Activity {
             @Override public void onPageStarted(WebView v, String u, Bitmap f) {
                 t.url = u;
                 t.loadStart = System.currentTimeMillis();
+                // Record the host the user legitimately landed on (first load, a recent tap, or an in-app load like the address bar / reload).
+                try {
+                    String h = Uri.parse(u).getHost();
+                    if (h != null && u.startsWith("http")) {
+                        long since = System.currentTimeMillis() - t.lastTap;
+                        if (t.pageHost == null || (since >= 0 && since < 1500) || reg(h).equals(t.pageHost == null ? "" : reg(t.pageHost))) t.pageHost = h;
+                    }
+                } catch (Throwable ig) {}
                 if (t.altScheme != null && !u.equals(t.altScheme) && !sameHostOtherScheme(u, t.altScheme)) t.altScheme = null;
                 if (u.startsWith("http")) Diag.bump("pages_opened");
                 if (t == cur && immersive) setReadMode(false);
@@ -1486,7 +1519,7 @@ public class MainActivity extends Activity {
         @JavascriptInterface public void savedOpen(String url) {
             if (t.url == null || !t.url.startsWith("file:///android_asset/") || url == null) return;
             final String u = url;
-            ui.post(new Runnable() { public void run() { if (cur != null) cur.wv.loadUrl(u); } });
+            ui.post(new Runnable() { public void run() { if (cur != null) { cur.lastTap = System.currentTimeMillis(); cur.pageHost = null; cur.wv.loadUrl(u); } } });
         }
         @JavascriptInterface public void savedClear(String key) {
             if (t.url == null || !t.url.startsWith("file:///android_asset/")) return;
@@ -1860,7 +1893,17 @@ public class MainActivity extends Activity {
         else url = searchBase() + Uri.encode(q);
         final String hh = hostOf(url);
         if (hh != null) new Thread(new Runnable() { public void run() { try { java.net.InetAddress.getAllByName(hh); } catch (Exception e) { /* ignore */ } } }).start();
+        cur.lastTap = System.currentTimeMillis(); cur.pageHost = null; // user-initiated: accept the destination
         cur.wv.loadUrl(upgrade(cur, url));
+    }
+
+    /** Registrable host (last two labels) so sub.site.com and site.com count as the same site for the redirect guard. */
+    private String reg(String host) {
+        if (host == null) return "";
+        host = host.toLowerCase();
+        String[] p = host.split("\\.");
+        if (p.length <= 2) return host;
+        return p[p.length - 2] + "." + p[p.length - 1];
     }
 
     private void goBack() {

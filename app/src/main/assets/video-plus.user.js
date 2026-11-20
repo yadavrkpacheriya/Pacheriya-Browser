@@ -45,8 +45,35 @@
     XMLHttpRequest.prototype.open = function (m, u) { this.__vpbad = bad(u); return _xo.apply(this, arguments); };
     XMLHttpRequest.prototype.send = function () { if (this.__vpbad) { try { this.abort(); } catch (e) {} return; } return _xs.apply(this, arguments); };
     var ast = document.createElement('style');
-    ast.textContent = 'ins.adsbygoogle,[class~="adsbygoogle"],[id^="google_ads"],iframe[src*="doubleclick"],iframe[src*="googlesyndication"],iframe[src*="exoclick"],iframe[src*="juicyads"],iframe[src*="trafficjunky"],iframe[src*="adsterra"],iframe[src*="popads"],[class~="ad-banner"],[class~="ads-container"]{display:none!important}';
+    ast.textContent = 'ins.adsbygoogle,[class~="adsbygoogle"],[id^="google_ads"],iframe[src*="doubleclick"],iframe[src*="googlesyndication"],iframe[src*="exoclick"],iframe[src*="juicyads"],iframe[src*="trafficjunky"],iframe[src*="adsterra"],iframe[src*="popads"],[class~="ad-banner"],[class~="ads-container"],[class*="adsbox"],[class*="ad-slot"],[class*="ad-container"],[class*="ad-wrapper"],[class*="advertisement"],[id*="ad-slot"],[id*="ad-container"],[data-ad],[data-ad-slot],.google-auto-placed,.adsbygoogle-noablate{display:none!important;height:0!important;min-height:0!important}';
     document.documentElement.appendChild(ast);
+
+    /* ---- redirect guard (page side): stop tap-hijack and idle/timer redirects ---- */
+    var lastReal = 0;
+    ['pointerdown', 'touchstart', 'mousedown', 'keydown'].forEach(function (ev) {
+      document.addEventListener(ev, function () { lastReal = Date.now(); }, true);
+    });
+    function sameSite(u) { try { var h = new URL(u, location.href).hostname, p = location.hostname; return h === p || h.slice(-p.length - 1) === '.' + p || p.slice(-h.length - 1) === '.' + h; } catch (e) { return true; } }
+    // block scripted navigations to another site that weren't triggered by a genuine tap in the last ~1.2s
+    try {
+      var _assign = location.assign.bind(location), _replace = location.replace.bind(location);
+      location.assign = function (u) { if (sameSite(u) || Date.now() - lastReal < 1200) return _assign(u); };
+      location.replace = function (u) { if (sameSite(u) || Date.now() - lastReal < 1200) return _replace(u); };
+    } catch (e) {}
+    // block meta-refresh redirects to other sites
+    try {
+      new MutationObserver(function (ms) {
+        ms.forEach(function (m) { for (var i = 0; i < m.addedNodes.length; i++) { var n = m.addedNodes[i]; if (n.tagName === 'META' && /refresh/i.test(n.getAttribute('http-equiv') || '')) { var c = n.getAttribute('content') || ''; var mu = c.match(/url=(.+)$/i); if (mu && !sameSite(mu[1].trim())) n.parentNode.removeChild(n); } } });
+      }).observe(document.documentElement, { childList: true, subtree: true });
+    } catch (e) {}
+    // neutralize full-page overlay anchors that hijack the first tap to an ad site
+    document.addEventListener('click', function (e) {
+      var a = e.target && e.target.closest && e.target.closest('a[href]');
+      if (a && a.href && !sameSite(a.href)) {
+        var r = a.getBoundingClientRect();
+        if (r.width > innerWidth * 0.85 && r.height > innerHeight * 0.5) { e.preventDefault(); e.stopPropagation(); } // page-covering ad link
+      }
+    }, true);
   }
 
   var PRE = {

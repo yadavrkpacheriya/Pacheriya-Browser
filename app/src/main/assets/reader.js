@@ -45,7 +45,11 @@
   function txt(e) { return e.innerText || e.textContent || ''; }
   /* ad-blocker nags / paywall notices that masquerade as the article — never pick these */
   var JUNK = /disable your ad ?block|turn off your ad ?block|whitelist|adblock detected|please support our (web)?site|continue enjoying free|subscribe to (read|continue)|you (have|'ve) reached your|create a free account to (read|continue)|log ?in to (read|continue)/i;
-  function isJunk(el) { var t = (el.innerText || el.textContent || '').trim(); return t.length < 600 && JUNK.test(t); }
+  function isJunk(el) {
+    if (el.matches && el.matches('[class*="ad-"],[class*="-ad"],[class*="adsbygoogle"],[id*="ad-"],[data-ad],.google-auto-placed')) return true;
+    var t = (el.innerText || el.textContent || '').trim(); return t.length < 600 && JUNK.test(t);
+  }
+  var AD_SEL = 'ins.adsbygoogle,[class*="adsbygoogle"],[class*="ad-slot"],[class*="ad-container"],[class*="ad-wrapper"],[class*="advertisement"],[id*="ad-slot"],[id*="ad-container"],[data-ad],.google-auto-placed';
   function best(doc, relax) {
     var c = doc.querySelectorAll('article, main, [role=main], .post, .entry-content, .article, #content, .content, .chapter-content, .chapter-body, #chapter-content, .chapter, .reading-content, .text-left, .entry, section, div'), top = null, sc = 0;
     for (var i = 0; i < c.length; i++) {
@@ -94,6 +98,9 @@
     var kids = el.querySelectorAll('h2,h3,h4,p,li,blockquote,pre,img');
     Array.prototype.forEach.call(kids, function (k) {
       if (k.closest('nav,footer,aside,header,form,script,style,.comments,#comments')) return;
+      if (k.closest(AD_SEL)) return;
+      var ktx = (k.innerText || k.textContent || '').trim();
+      if (ktx && ktx.length < 600 && JUNK.test(ktx)) return; // drop ad-blocker nag lines inside the container
       if (k.tagName === 'IMG') {
         var raw = k.getAttribute('data-src') || k.getAttribute('data-lazy-src') || k.getAttribute('data-original') || k.getAttribute('src'), s = '';
         try { s = k.currentSrc && k.ownerDocument === document && !/^data:/.test(k.currentSrc) && !k.getAttribute('data-src') ? k.currentSrc : new URL(raw, base).href; } catch (e) {}

@@ -386,7 +386,7 @@ public class MainActivity extends Activity {
         bar = new LinearLayout(this);
         bar.setOrientation(LinearLayout.HORIZONTAL);
         bar.setGravity(Gravity.CENTER_VERTICAL);
-        bar.setBackgroundColor(0xFF1B1B1F);
+        bar.setBackgroundColor(0xFF15151A);
         bar.setPadding(dp(6), dp(6), dp(6), dp(6));
 
         TextView back = iconBtn("\u2039");
@@ -405,7 +405,7 @@ public class MainActivity extends Activity {
         urlBox.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
         urlBox.setImeOptions(EditorInfo.IME_ACTION_GO);
         GradientDrawable gd = new GradientDrawable();
-        gd.setColor(0xFF2B2B33);
+        gd.setColor(0xFF26262F);
         gd.setCornerRadius(dp(22));
         urlBox.setBackground(gd);
         urlBox.setPadding(dp(16), dp(8), dp(16), dp(8));
@@ -435,7 +435,7 @@ public class MainActivity extends Activity {
         dlIcon = new FrameLayout(this);
         TextView dlI = iconBtn("\u2B07");
         dlI.setTextSize(20);
-        dlI.setTextColor(0xFFB9A8FF);
+        dlI.setTextColor(0xFFE2B33C);
         dlIcon.addView(dlI, new FrameLayout.LayoutParams(dp(40), dp(40)));
         dlBadge = new TextView(this);
         dlBadge.setTextColor(Color.WHITE);
@@ -495,7 +495,7 @@ public class MainActivity extends Activity {
         dlPanel.setElevation(dp(18));
         dlPanel.setVisibility(View.GONE);
         dlHead = new TextView(this);
-        dlHead.setTextColor(0xFFB9A8FF);
+        dlHead.setTextColor(0xFFE2B33C);
         dlHead.setTextSize(14);
         dlHead.setTypeface(null, android.graphics.Typeface.BOLD);
         dlHead.setPadding(dp(16), dp(9), dp(16), dp(9));
@@ -522,7 +522,7 @@ public class MainActivity extends Activity {
         content.addView(dlPanel, dol);
         navBar = new LinearLayout(this);
         navBar.setOrientation(LinearLayout.HORIZONTAL);
-        navBar.setBackgroundColor(0xFF1B1B22);
+        navBar.setBackgroundColor(0xFF15151A);
         String[] nl = {"\u2039", "\u203A", "\u2302", "\u27F3"};
         for (int ni = 0; ni < nl.length; ni++) {
             final int nid2 = ni;
@@ -607,7 +607,7 @@ public class MainActivity extends Activity {
         if (t.swipe == null) {
             final Tab ft = t;
             t.swipe = new androidx.swiperefreshlayout.widget.SwipeRefreshLayout(this);
-            t.swipe.setColorSchemeColors(0xFF6A4CFF);
+            t.swipe.setColorSchemeColors(0xFFE2B33C);
             t.swipe.setProgressBackgroundColorSchemeColor(0xFF1E1E26);
             if (t.wv.getParent() != null) ((ViewGroup) t.wv.getParent()).removeView(t.wv);
             t.swipe.addView(t.wv, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
@@ -618,7 +618,7 @@ public class MainActivity extends Activity {
         if (t.swipe.getParent() != null) ((ViewGroup) t.swipe.getParent()).removeView(t.swipe);
         content.addView(t.swipe, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         urlBox.setText(t.url.startsWith("file:") ? "" : t.url);
-        bar.setBackgroundColor(t.incognito ? 0xFF2D2147 : 0xFF1B1B1F);
+        bar.setBackgroundColor(t.incognito ? 0xFF241A33 : 0xFF15151A);
         tabBtn.setText(String.valueOf(tabs.size()));
         pb.setVisibility(View.INVISIBLE);
         refreshBadge();
@@ -633,22 +633,121 @@ public class MainActivity extends Activity {
         else select(tabs.get(tabs.size() - 1));
     }
 
+    /** Capture a small thumbnail of a tab's current page for the tab switcher. */
+    private android.graphics.Bitmap tabThumb(Tab t, int w, int h) {
+        try {
+            if (t.wv == null || t.wv.getWidth() == 0) return null;
+            android.graphics.Bitmap full = android.graphics.Bitmap.createBitmap(t.wv.getWidth(), Math.min(t.wv.getHeight(), t.wv.getWidth() * h / Math.max(1, w)), android.graphics.Bitmap.Config.RGB_565);
+            android.graphics.Canvas c = new android.graphics.Canvas(full);
+            c.drawColor(Color.WHITE);
+            t.wv.draw(c);
+            android.graphics.Bitmap sc = android.graphics.Bitmap.createScaledBitmap(full, w, h, true);
+            if (sc != full) full.recycle();
+            return sc;
+        } catch (Throwable e) { return null; }
+    }
+
+    /** Chrome-style grid tab switcher: 2-column thumbnail cards, each with a close \u2715; a New-tab bar at the bottom. */
     private void showTabs() {
-        String[] items = new String[tabs.size()];
-        for (int i = 0; i < items.length; i++) {
-            Tab t = tabs.get(i);
-            items[i] = (t == cur ? "\u25B6 " : "") + (t.title == null || t.title.isEmpty() ? t.url : t.title);
+        final android.app.Dialog dlg = new android.app.Dialog(this, android.R.style.Theme_Black_NoTitleBar_Fullscreen);
+        LinearLayout rootL = new LinearLayout(this);
+        rootL.setOrientation(LinearLayout.VERTICAL);
+        rootL.setBackgroundColor(0xFF101014);
+
+        // header
+        LinearLayout head = new LinearLayout(this);
+        head.setOrientation(LinearLayout.HORIZONTAL);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        head.setPadding(dp(18), dp(16), dp(18), dp(14));
+        TextView ht = new TextView(this);
+        ht.setText(tabs.size() + (tabs.size() == 1 ? " tab" : " tabs"));
+        ht.setTextColor(Color.WHITE); ht.setTextSize(20);
+        ht.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        head.addView(ht, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        TextView done = new TextView(this);
+        done.setText("Done"); done.setTextColor(0xFFE2B33C); done.setTextSize(16);
+        done.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        done.setPadding(dp(12), dp(8), dp(4), dp(8));
+        done.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { dlg.dismiss(); } });
+        head.addView(done);
+        rootL.addView(head, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        // scrollable 2-column grid
+        android.widget.ScrollView sv = new android.widget.ScrollView(this);
+        LinearLayout grid = new LinearLayout(this);
+        grid.setOrientation(LinearLayout.VERTICAL);
+        grid.setPadding(dp(10), 0, dp(10), dp(90));
+        int tw = (getResources().getDisplayMetrics().widthPixels - dp(40)) / 2;
+        int th = tw * 5 / 4;
+        for (int i = 0; i < tabs.size(); i += 2) {
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            for (int j = i; j < i + 2 && j < tabs.size(); j++) {
+                final Tab t = tabs.get(j);
+                FrameLayout card = new FrameLayout(this);
+                android.graphics.drawable.GradientDrawable cg = new android.graphics.drawable.GradientDrawable();
+                cg.setColor(0xFF1C1C24); cg.setCornerRadius(dp(14));
+                if (t == cur) { cg.setStroke(dp(2), 0xFFE2B33C); }
+                card.setBackground(cg);
+                LinearLayout cc = new LinearLayout(this); cc.setOrientation(LinearLayout.VERTICAL);
+                // title row
+                LinearLayout tr = new LinearLayout(this); tr.setOrientation(LinearLayout.HORIZONTAL);
+                tr.setGravity(Gravity.CENTER_VERTICAL); tr.setPadding(dp(10), dp(8), dp(6), dp(6));
+                TextView tt = new TextView(this);
+                tt.setText(t.title == null || t.title.isEmpty() ? (t.url == null ? "New tab" : t.url) : t.title);
+                tt.setTextColor(0xFFDDDDE2); tt.setTextSize(12); tt.setSingleLine(true);
+                tt.setEllipsize(android.text.TextUtils.TruncateAt.END);
+                tr.addView(tt, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+                TextView x = new TextView(this);
+                x.setText("\u2715"); x.setTextColor(0xFF9A9AA6); x.setTextSize(15);
+                x.setPadding(dp(6), dp(2), dp(8), dp(4));
+                final android.app.Dialog fd = dlg;
+                x.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { closeTab(t); fd.dismiss(); if (!tabs.isEmpty()) showTabs(); } });
+                tr.addView(x);
+                cc.addView(tr);
+                // thumbnail
+                android.widget.ImageView iv = new android.widget.ImageView(this);
+                iv.setScaleType(android.widget.ImageView.ScaleType.FIT_START);
+                iv.setBackgroundColor(0xFF000000);
+                android.graphics.Bitmap bm = tabThumb(t, tw, th);
+                if (bm != null) iv.setImageBitmap(bm);
+                cc.addView(iv, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, th));
+                card.addView(cc);
+                card.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { select(t); dlg.dismiss(); } });
+                LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(tw, ViewGroup.LayoutParams.WRAP_CONTENT);
+                clp.setMargins(dp(5), dp(5), dp(5), dp(5));
+                row.addView(card, clp);
+            }
+            grid.addView(row);
         }
-        new AlertDialog.Builder(this).setTitle("Tabs (" + tabs.size() + ")")
-            .setItems(items, new DialogInterface.OnClickListener() {
-                public void onClick(DialogInterface d, int which) { select(tabs.get(which)); }
-            })
-            .setPositiveButton("New tab", new DialogInterface.OnClickListener() {
-                public void onClick(DialogInterface d, int w) { newTab(HOME); }
-            })
-            .setNegativeButton("Close this tab", new DialogInterface.OnClickListener() {
-                public void onClick(DialogInterface d, int w) { closeTab(cur); }
-            }).show();
+        sv.addView(grid);
+        rootL.addView(sv, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+
+        // bottom new-tab bar
+        LinearLayout bottom = new LinearLayout(this);
+        bottom.setOrientation(LinearLayout.HORIZONTAL);
+        bottom.setGravity(Gravity.CENTER);
+        bottom.setBackgroundColor(0xFF17171E);
+        bottom.setPadding(dp(16), dp(14), dp(16), dp(16));
+        TextView nt = new TextView(this);
+        nt.setText("+  New tab"); nt.setTextColor(Color.WHITE); nt.setTextSize(16);
+        nt.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        android.graphics.drawable.GradientDrawable ntb = new android.graphics.drawable.GradientDrawable();
+        ntb.setColor(0xFFE2B33C); ntb.setCornerRadius(dp(24));
+        nt.setBackground(ntb); nt.setGravity(Gravity.CENTER);
+        nt.setTextColor(0xFF1A1405);
+        nt.setPadding(dp(28), dp(12), dp(28), dp(12));
+        nt.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { newTab(HOME); dlg.dismiss(); } });
+        bottom.addView(nt);
+        TextView inc = new TextView(this);
+        inc.setText("Private"); inc.setTextColor(0xFFBBBBC4); inc.setTextSize(15);
+        inc.setPadding(dp(20), dp(12), dp(10), dp(12));
+        inc.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { newTab(HOME, true); toast("Private tab: no history saved"); dlg.dismiss(); } });
+        bottom.addView(inc);
+        rootL.addView(bottom, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        dlg.setContentView(rootL);
+        dlg.show();
     }
 
     // ---------------- WebView ----------------
@@ -1990,7 +2089,7 @@ public class MainActivity extends Activity {
         getTheme().resolveAttribute(android.R.attr.selectableItemBackground, tvv, true);
         row.setBackgroundResource(tvv.resourceId);
         TextView ic = new TextView(this);
-        ic.setText(icon); ic.setTextSize(16); ic.setGravity(Gravity.CENTER); ic.setTextColor(0xFFB9A8FF);
+        ic.setText(icon); ic.setTextSize(16); ic.setGravity(Gravity.CENTER); ic.setTextColor(0xFFE2B33C);
         TextView tx = new TextView(this);
         tx.setText(label); tx.setTextColor(id == 17 ? 0xFFFF8A80 : Color.WHITE); tx.setTextSize(15); tx.setSingleLine(true);
         row.addView(ic, new LinearLayout.LayoutParams(dp(30), ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -2061,7 +2160,7 @@ public class MainActivity extends Activity {
         android.util.TypedValue tvv = new android.util.TypedValue();
         getTheme().resolveAttribute(android.R.attr.selectableItemBackground, tvv, true);
         header.setBackgroundResource(tvv.resourceId);
-        TextView ic = new TextView(this); ic.setText(icon); ic.setTextSize(16); ic.setGravity(Gravity.CENTER); ic.setTextColor(0xFFB9A8FF);
+        TextView ic = new TextView(this); ic.setText(icon); ic.setTextSize(16); ic.setGravity(Gravity.CENTER); ic.setTextColor(0xFFE2B33C);
         TextView tx = new TextView(this); tx.setText(title); tx.setTextColor(0xFFCFCFE0); tx.setTextSize(15); tx.setSingleLine(true);
         final TextView arrow = new TextView(this); arrow.setText("\u25BE"); arrow.setTextColor(0xFF8A8C93); arrow.setTextSize(13);
         header.addView(ic, new LinearLayout.LayoutParams(dp(30), ViewGroup.LayoutParams.WRAP_CONTENT));

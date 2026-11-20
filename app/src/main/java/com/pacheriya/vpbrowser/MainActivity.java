@@ -115,7 +115,7 @@ public class MainActivity extends Activity {
     private FrameLayout root, content, fsHost;
     private LinearLayout main, bar;
     private EditText urlBox;
-    private TextView tabBtn, dlHead;
+    private TextView tabBtn, dlHead, lockIcon;
     private LinearLayout dlPanel, dlList, navBar, dlOverlay;
     private FrameLayout dlIcon;
     private TextView dlBadge;
@@ -404,11 +404,8 @@ public class MainActivity extends Activity {
         urlBox.setSelectAllOnFocus(true);
         urlBox.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
         urlBox.setImeOptions(EditorInfo.IME_ACTION_GO);
-        GradientDrawable gd = new GradientDrawable();
-        gd.setColor(0xFF26262F);
-        gd.setCornerRadius(dp(22));
-        urlBox.setBackground(gd);
-        urlBox.setPadding(dp(16), dp(8), dp(16), dp(8));
+        urlBox.setBackground(null);
+        urlBox.setPadding(dp(6), dp(8), dp(10), dp(8));
         urlBox.setOnEditorActionListener(new TextView.OnEditorActionListener() {
             public boolean onEditorAction(TextView v, int actionId, android.view.KeyEvent e) {
                 go(urlBox.getText().toString());
@@ -420,7 +417,11 @@ public class MainActivity extends Activity {
         });
 
         tabBtn = iconBtn("1");
-        tabBtn.setTextSize(14);
+        tabBtn.setTextSize(13);
+        tabBtn.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        GradientDrawable tb = new GradientDrawable();
+        tb.setColor(0x00000000); tb.setStroke(dp(2), 0xFFCFCFE0); tb.setCornerRadius(dp(6));
+        tabBtn.setBackground(tb);
         tabBtn.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) { showTabs(); }
         });
@@ -431,7 +432,20 @@ public class MainActivity extends Activity {
         });
 
         bar.addView(back, new LinearLayout.LayoutParams(dp(40), dp(40)));
-        bar.addView(urlBox, new LinearLayout.LayoutParams(0, dp(42), 1f));
+        // address pill: lock icon + url, Chrome-style rounded container
+        LinearLayout pill = new LinearLayout(this);
+        pill.setOrientation(LinearLayout.HORIZONTAL);
+        pill.setGravity(Gravity.CENTER_VERTICAL);
+        GradientDrawable gd = new GradientDrawable();
+        gd.setColor(0xFF26262F);
+        gd.setCornerRadius(dp(22));
+        pill.setBackground(gd);
+        pill.setPadding(dp(12), 0, dp(6), 0);
+        lockIcon = new TextView(this);
+        lockIcon.setText("🔒"); lockIcon.setTextSize(12); lockIcon.setTextColor(0xFF9AA0AA);
+        pill.addView(lockIcon, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        pill.addView(urlBox, new LinearLayout.LayoutParams(0, dp(42), 1f));
+        bar.addView(pill, new LinearLayout.LayoutParams(0, dp(42), 1f));
         dlIcon = new FrameLayout(this);
         TextView dlI = iconBtn("\u2B07");
         dlI.setTextSize(20);
@@ -618,6 +632,7 @@ public class MainActivity extends Activity {
         if (t.swipe.getParent() != null) ((ViewGroup) t.swipe.getParent()).removeView(t.swipe);
         content.addView(t.swipe, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         urlBox.setText(t.url.startsWith("file:") ? "" : t.url);
+        setLock(t.url);
         bar.setBackgroundColor(t.incognito ? 0xFF241A33 : 0xFF15151A);
         tabBtn.setText(String.valueOf(tabs.size()));
         pb.setVisibility(View.INVISIBLE);
@@ -897,6 +912,7 @@ public class MainActivity extends Activity {
                 t.entries.clear(); t.covered.clear(); t.gen++; t.pending = 0; t.panelOpen = false; t.autoShown = false;
                 if (t == cur) {
                     urlBox.setText(u.startsWith("file:") ? "" : u);
+                    setLock(u);
                     refreshBadge();
                 }
             }
@@ -2100,6 +2116,29 @@ public class MainActivity extends Activity {
         return row;
     }
 
+    /** Round quick-action icon button for the menu's top row (Chrome-style). */
+    private TextView quickIcon(final PopupWindow pop, String glyph, int size, boolean enabled, final Runnable act) {
+        TextView b = new TextView(this);
+        b.setText(glyph); b.setTextSize(size); b.setGravity(Gravity.CENTER);
+        b.setTextColor(enabled ? 0xFFE2B33C : 0xFF55555E);
+        GradientDrawable g = new GradientDrawable(); g.setShape(GradientDrawable.OVAL); g.setColor(0xFF26262F);
+        b.setBackground(g);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(46), dp(46));
+        lp.setMargins(dp(10), 0, dp(10), 0);
+        b.setLayoutParams(lp);
+        if (enabled) b.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { pop.dismiss(); act.run(); } });
+        return b;
+    }
+
+    /** Address-bar lock indicator: 🔒 for https, ⚠ for plain http, 🏠 for the home/file pages. */
+    private void setLock(String u) {
+        if (lockIcon == null) return;
+        if (u == null || u.startsWith("file:")) { lockIcon.setText("🏠"); lockIcon.setTextColor(0xFF9AA0AA); }
+        else if (u.startsWith("https:")) { lockIcon.setText("🔒"); lockIcon.setTextColor(0xFF7FbF7F); }
+        else if (u.startsWith("http:")) { lockIcon.setText("⚠"); lockIcon.setTextColor(0xFFE2A33C); }
+        else { lockIcon.setText("🌐"); lockIcon.setTextColor(0xFF9AA0AA); }
+    }
+
     private void showMenu(View anchor) {
         boolean bm = cur != null && Store.isBookmarked(sp, cur.url);
         android.widget.ScrollView sv = new android.widget.ScrollView(this);
@@ -2114,16 +2153,28 @@ public class MainActivity extends Activity {
 
         int ph = getResources().getDisplayMetrics().heightPixels;
         int pw = getResources().getDisplayMetrics().widthPixels;
-        final PopupWindow pop = new PopupWindow(sv, (int) (pw * 0.74f), ViewGroup.LayoutParams.WRAP_CONTENT, true);
+        final PopupWindow pop = new PopupWindow(sv, (int) (pw * 0.80f), ViewGroup.LayoutParams.WRAP_CONTENT, true);
         pop.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
         pop.setElevation(dp(14));
         pop.setAnimationStyle(android.R.style.Animation_Dialog);
+
+        /* Chrome-style quick-action icon row across the top: back, forward, bookmark, share */
+        LinearLayout quick = new LinearLayout(this);
+        quick.setOrientation(LinearLayout.HORIZONTAL);
+        quick.setGravity(Gravity.CENTER);
+        quick.setPadding(dp(6), dp(6), dp(6), dp(10));
+        quick.addView(quickIcon(pop, "\u2039", 30, cur != null && cur.wv.canGoBack(), new Runnable() { public void run() { goBack(); } }));
+        quick.addView(quickIcon(pop, "\u203A", 30, cur != null && cur.wv.canGoForward(), new Runnable() { public void run() { if (cur != null && cur.wv.canGoForward()) cur.wv.goForward(); } }));
+        quick.addView(quickIcon(pop, bm ? "\u2605" : "\u2606", 24, true, new Runnable() { public void run() { if (cur != null && cur.url != null && cur.url.startsWith("http")) toast(Store.toggleBookmark(sp, cur.title, cur.url) ? "Bookmark added" : "Bookmark removed"); } }));
+        quick.addView(quickIcon(pop, "\u21AA", 22, true, new Runnable() { public void run() { if (cur != null) share(cur.url); } }));
+        box.addView(quick);
+        View qdiv = new View(this); qdiv.setBackgroundColor(0x1AFFFFFF);
+        box.addView(qdiv, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1)));
 
         /* most-used, always visible */
         box.addView(menuItem(pop, "\u2728", "Assistant", 25));
         box.addView(menuItem(pop, "\uFF0B", "New tab", 1));
         box.addView(menuItem(pop, "\u27F3", "Reload", 3));
-        box.addView(menuItem(pop, bm ? "\u2605" : "\u2606", bm ? "Remove bookmark" : "Add bookmark", 6));
 
         /* collapsible groups */
         addGroup(pop, box, "\uD83D\uDCC4", "This page", new Object[][]{

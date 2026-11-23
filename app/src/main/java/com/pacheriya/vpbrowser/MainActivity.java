@@ -848,6 +848,11 @@ public class MainActivity extends Activity {
 
             @Override public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest r) {
                 String sc = r.getUrl().getScheme();
+                // Google/Microsoft/Apple block sign-in inside WebViews ("browser not secure" / silent no-redirect).
+                // Open these auth pages in a real Chrome Custom Tab so login completes, then control returns to the app.
+                if (r.isForMainFrame() && "https".equals(sc) && isAuthUrl(r.getUrl().getHost(), r.getUrl().toString())) {
+                    if (openInCustomTab(r.getUrl().toString())) return true;
+                }
                 // Redirect guard: block a main-frame jump to a different site that wasn't driven by a real, recent tap
                 // (idle redirects, refresh redirects, tap-hijack pop-unders). Only when the blocker is on.
                 if (adblock && r.isForMainFrame() && ("http".equals(sc) || "https".equals(sc))) {
@@ -1396,6 +1401,44 @@ public class MainActivity extends Activity {
 
     private String uaFor(int m) {
         switch (m) { case 1: return desktopUa; case 2: return UA_EDGE; case 3: return UA_IE; case 4: return UA_FF; default: return defaultUa; }
+    }
+
+    private long lastCustomTab = 0;
+    /** True only for identity-provider sign-in pages that refuse to work inside a WebView. */
+    private boolean isAuthUrl(String host, String url) {
+        if (host == null) return false;
+        host = host.toLowerCase();
+        boolean idpHost =
+            host.equals("accounts.google.com") ||
+            host.equals("accounts.youtube.com") ||
+            host.equals("login.microsoftonline.com") || host.equals("login.live.com") || host.equals("login.microsoft.com") ||
+            host.equals("appleid.apple.com") ||
+            host.endsWith(".okta.com") || host.equals("accounts.spotify.com");
+        if (!idpHost) return false;
+        // Only divert real sign-in / oauth flows, not e.g. account settings the user already reached.
+        String u = url.toLowerCase();
+        return u.contains("signin") || u.contains("oauth") || u.contains("/o/") || u.contains("login") || u.contains("authorize") || u.contains("auth?") || u.contains("servicelogin") || u.contains("accountchooser");
+    }
+    /** Open a URL in a Chrome Custom Tab (a real Chrome surface) so provider sign-in works; returns false if it can't. */
+    private boolean openInCustomTab(String url) {
+        // avoid loops: don't re-divert within 2s
+        if (System.currentTimeMillis() - lastCustomTab < 2000) return false;
+        try {
+            androidx.browser.customtabs.CustomTabsIntent ci = new androidx.browser.customtabs.CustomTabsIntent.Builder()
+                .setShowTitle(true)
+                .setUrlBarHidingEnabled(false)
+                .build();
+            ci.intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            // prefer Chrome if present so Google accepts it
+            if (getPackageManager().getLaunchIntentForPackage("com.android.chrome") != null) ci.intent.setPackage("com.android.chrome");
+            ci.launchUrl(this, Uri.parse(url));
+            lastCustomTab = System.currentTimeMillis();
+            toast("Opening secure sign-in… finish here, then return to the app");
+            return true;
+        } catch (Throwable e) {
+            // No Chrome / custom tabs available: fall back to opening the system browser.
+            try { Intent in = new Intent(Intent.ACTION_VIEW, Uri.parse(url)); in.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK); startActivity(in); lastCustomTab = System.currentTimeMillis(); return true; } catch (Throwable x) { return false; }
+        }
     }
 
     private void applyUa(Tab t) {
@@ -2398,6 +2441,12 @@ public class MainActivity extends Activity {
             if (ls != null) sensors.registerListener(luxListener, ls, SensorManager.SENSOR_DELAY_NORMAL);
         } catch (Exception e) { /* no light sensor: the Auto picture uses the video alone */ }
         setBg(false);
+        // Returning from a Custom Tab sign-in: sync cookies and reload so the now-authenticated session shows.
+        if (lastCustomTab > 0 && System.currentTimeMillis() - lastCustomTab < 5 * 60 * 1000) {
+            lastCustomTab = 0;
+            try { android.webkit.CookieManager.getInstance().flush(); } catch (Throwable e) {}
+            if (cur != null && cur.url != null && cur.url.startsWith("http")) { try { cur.wv.reload(); } catch (Throwable e) {} }
+        }
         Updater.resume(this);
         Updater.check(this, false);
     }

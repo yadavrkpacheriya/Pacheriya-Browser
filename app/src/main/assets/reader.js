@@ -198,25 +198,24 @@
     }
     return addedAny;
   }
+  // Gentle endless reading: never hammer the site. Load the NEXT chapter only, only when the reader is genuinely
+  // near the end, and never more often than once every few seconds — so WTR-LAB's Cloudflare check isn't tripped.
+  var lastFetch = 0;
   function more() {
     if (busy || !R.on) return;
+    if (Date.now() - lastFetch < 4000) return;   // cooldown: at most one chapter every ~4s (human-paced)
     busy = true;
     if (liveSeen === null) snapshotLive();
-    // strategy 1: push the real page to the bottom so its own loader fires, then harvest new paragraphs
-    var beforeH = document.documentElement.scrollHeight;
-    try { window.scrollTo(0, document.documentElement.scrollHeight); } catch (e) {}
-    setTimeout(function () {
-      var got = harvestLive();
-      var grew = document.documentElement.scrollHeight > beforeH + 200;
-      busy = false;
-      if (got || grew) { liveTries = 0; return; }             // site is feeding us content — keep riding it
-      // strategy 2: no built-in endless scroll here — fall back to fetching the next URL
-      if (++liveTries >= 2) fetchNext();
-    }, 900);
+    // First try harvesting any content the site itself already loaded underneath (no scroll-jerking, no extra requests).
+    var got = harvestLive();
+    busy = false;
+    if (got) { lastFetch = Date.now(); return; }
+    // Otherwise fetch exactly the next chapter, once.
+    fetchNext();
   }
   function fetchNext() {
     if (!nxt || loaded[nxt]) return;
-    var u = nxt; loaded[u] = 1; busy = true;
+    var u = nxt; loaded[u] = 1; busy = true; lastFetch = Date.now();
     fetch(u, { credentials: 'include' }).then(function (r) { if (!r.ok) throw 0; return r.text(); }).then(function (h) {
       var d = new DOMParser().parseFromString(h, 'text/html'), el = best(d);
       if (!el) { navTo(u); return; }
@@ -279,12 +278,13 @@
     function showBar(s) { bar.style.transform = s ? 'none' : 'translateY(-110%)'; bar.__hid = !s; }
     ov.addEventListener('scroll', function () {
       var y = ov.scrollTop; if (y > lastY + 8 && y > 60) showBar(false); else if (y < lastY - 8) showBar(true); lastY = y;
-      if (y + ov.clientHeight > ov.scrollHeight - 5000) more();
+      // only load the next chapter when the reader is genuinely near the bottom (~1200px), not pages early
+      if (y + ov.clientHeight > ov.scrollHeight - 1200) more();
     }, { passive: true });
     box.addEventListener('click', function () { showBar(!!bar.__hid); });
     R.on = true; paint(); chrome(true);
     if (R.auto) { R.tl = R.auto; tb.textContent = 'Translate: ' + R.tl.toUpperCase(); doTr(); }
-    setTimeout(more, 600);
+    /* do NOT prefetch on open — wait until the user actually scrolls near the end (avoids bot-like rapid requests) */
   }
   function doTr() {
     var ps = Array.prototype.filter.call(box.children, function (c) { return c.__src; });

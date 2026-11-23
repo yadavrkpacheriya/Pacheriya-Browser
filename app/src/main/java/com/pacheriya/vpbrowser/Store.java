@@ -12,16 +12,27 @@ final class Store {
 
     static void addHistory(SharedPreferences sp, String title, String url) {
         try {
+            if (url == null || url.isEmpty()) return;
             JSONArray a = get(sp, "hist");
-            if (a.length() > 0 && url.equals(a.getJSONObject(a.length() - 1).optString("u"))) return;
+            // If the same URL appears among the last few entries, just update its title/time instead of adding a duplicate.
+            // (Fixes double entries when a page's real title arrives after the first load, and SPA re-fires.)
+            for (int i = a.length() - 1, seen = 0; i >= 0 && seen < 5; i--, seen++) {
+                JSONObject p = a.optJSONObject(i);
+                if (p != null && url.equals(p.optString("u"))) {
+                    if (title != null && !title.isEmpty() && !title.equals(url)) p.put("t", title);
+                    p.put("ts", System.currentTimeMillis());
+                    sp.edit().putString("hist", a.toString()).apply();
+                    return;
+                }
+            }
             JSONObject o = new JSONObject();
-            o.put("t", title);
+            o.put("t", title == null || title.isEmpty() ? url : title);
             o.put("u", url);
             o.put("ts", System.currentTimeMillis());
             a.put(o);
-            if (a.length() > 600) {
+            if (a.length() > 1200) {
                 JSONArray b = new JSONArray();
-                for (int i = a.length() - 500; i < a.length(); i++) b.put(a.get(i));
+                for (int i = a.length() - 1000; i < a.length(); i++) b.put(a.get(i));
                 a = b;
             }
             sp.edit().putString("hist", a.toString()).apply();

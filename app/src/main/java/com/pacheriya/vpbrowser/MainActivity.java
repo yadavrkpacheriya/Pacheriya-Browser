@@ -226,7 +226,7 @@ public class MainActivity extends Activity {
     }
     private boolean playing = false, inPip = false, desktop = false, adblock = true, scripts = true;
     private boolean autoPrev = true;
-    private String readerJs = "";
+    private String readerJs = "", pwJs = "";
     private String autoTr = "";
     private String injected = "", defaultUa = "", desktopUa = "", UA_EDGE = "", UA_IE = "", UA_FF = "", authUa = "";
     private androidx.webkit.WebViewAssetLoader assetLoader;
@@ -312,6 +312,7 @@ public class MainActivity extends Activity {
         String css = "(function(){var c=" + jq(asset("vp-cosmetic.css")) + ";function a(){var p=document.head||document.documentElement;if(!p){setTimeout(a,15);return}var s=document.createElement('style');s.textContent=c;p.appendChild(s)}a()})();";
         readerJs = asset("reader.js");
         ocrJs = asset("ocr.js");
+        pwJs = asset("pw.js");
         picTr = sp.getBoolean("pictr", true);
         autoPrev = sp.getBoolean("autoprev", true);
         autoTr = sp.getString("autotr", "en");
@@ -965,6 +966,13 @@ public class MainActivity extends Activity {
                 if (u.startsWith("http")) ui.postDelayed(new Runnable() { public void run() { if (t == cur) fitZoom(t, 0); } }, 900);
                 if (u.startsWith("http")) v.evaluateJavascript(readerJs + ";window.__vpReader.page('" + autoTr + "')", null);
                 if (picTr && u.startsWith("http")) v.evaluateJavascript(ocrJs + ";window.__vpPic&&window.__vpPic.start()", null);
+                if (u.startsWith("http") && sp.getBoolean("pwsave", true) && !t.incognito) v.evaluateJavascript(pwJs, null);
+            }
+            // SPA sites (e.g. WTR-LAB chapters) change the URL via JS without a full reload — catch those for history.
+            @Override public void doUpdateVisitedHistory(WebView v, String u, boolean isReload) {
+                t.url = u;
+                if (!t.incognito && u != null && u.startsWith("http")) Store.addHistory(sp, v.getTitle(), u);
+                if (t == cur) { urlBox.setText(u.startsWith("file:") ? "" : u); setLock(u); }
             }
         });
 
@@ -976,7 +984,9 @@ public class MainActivity extends Activity {
                 }
             }
 
-            @Override public void onReceivedTitle(WebView v, String ti) { if (ti != null) t.title = ti; }
+            @Override public void onReceivedTitle(WebView v, String ti) {
+                if (ti != null) { t.title = ti; if (!t.incognito && t.url != null && t.url.startsWith("http")) Store.addHistory(sp, ti, t.url); }
+            }
 
             @Override public Bitmap getDefaultVideoPoster() { return Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888); }
 
@@ -1738,6 +1748,28 @@ public class MainActivity extends Activity {
                 return "data:image/jpeg;base64," + android.util.Base64.encodeToString(bos.toByteArray(), android.util.Base64.NO_WRAP);
             } catch (Throwable e) { if (bm != null) try { bm.recycle(); } catch (Throwable ig) {} return ""; }
         }
+        /** A login form was submitted: offer to save the credential (any page may call this). */
+        @JavascriptInterface public void pwOffer(final String user, final String pass) {
+            if (t.incognito || user == null || pass == null || pass.isEmpty()) return;
+            final String url = t.url;
+            if (url == null || !url.startsWith("http")) return;
+            if (!sp.getBoolean("pwsave", true)) return; // user turned saving off
+            ui.post(new Runnable() { public void run() {
+                new AlertDialog.Builder(MainActivity.this)
+                    .setTitle("Save password?")
+                    .setMessage("Save login for " + Passwords.host(url) + (user.isEmpty() ? "" : " (" + user + ")") + "?")
+                    .setPositiveButton("Save", new DialogInterface.OnClickListener() { public void onClick(DialogInterface d, int w) { Passwords.save(MainActivity.this, url, user, pass); toast("Password saved"); } })
+                    .setNegativeButton("Never", new DialogInterface.OnClickListener() { public void onClick(DialogInterface d, int w) { } })
+                    .setNeutralButton("Not now", null)
+                    .show();
+            } });
+        }
+        /** Page asks whether we have saved logins for it (returns [{u,p}] so the page can autofill). Guarded to real pages. */
+        @JavascriptInterface public String pwGet() {
+            if (t.incognito || t.url == null || !t.url.startsWith("http")) return "[]";
+            return Passwords.forUrl(MainActivity.this, t.url).toString();
+        }
+
         @JavascriptInterface public String savedList(String key) {
             if (t.url == null || !t.url.startsWith("file:///android_asset/")) return "[]";
             if (!"hist".equals(key) && !"bm".equals(key)) return "[]";

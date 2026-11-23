@@ -2350,9 +2350,8 @@ public class MainActivity extends Activity {
                 new android.hardware.biometrics.BiometricPrompt.AuthenticationCallback() {
                     @Override public void onAuthenticationSucceeded(android.hardware.biometrics.BiometricPrompt.AuthenticationResult r) { unlocked = true; }
                     @Override public void onAuthenticationError(int code, CharSequence msg) {
-                        if (code == android.hardware.biometrics.BiometricPrompt.BIOMETRIC_ERROR_USER_CANCELED
-                            || code == android.hardware.biometrics.BiometricPrompt.BIOMETRIC_ERROR_NEGATIVE_BUTTON
-                            || code == android.hardware.biometrics.BiometricPrompt.BIOMETRIC_ERROR_CANCELED) finish();
+                        // User-cancel (10), negative-button (13) or system-cancel (5): close the app rather than leaving it open unlocked.
+                        if (code == 10 || code == 13 || code == 5) finish();
                     }
                 });
         } catch (Throwable e) { unlocked = true; }

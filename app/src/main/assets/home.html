@@ -52,8 +52,10 @@ function sec(n,l,cls,open){var d=document.createElement('details');if(cls)d.clas
 /* build default category list (normal + 18+), then let the user edit/sort/delete and save it */
 var DEFAULT=D.map(function(c){return {n:c[0],a:false,s:c[1].map(function(x){return {t:x[0],u:x[1]}})}});
 [['18+ Adult tube sites (adults only)',AD],['18+ Live cams (adults only)',CM],['18+ Stories and audio (adults only)',ST],['18+ Adult comics and art (adults only)',GA]].forEach(function(p){DEFAULT.push({n:p[0],a:true,s:p[1].map(function(x){return {t:x[0],u:x[1]}})})});
-function loadCats(){try{var v=JSON.parse(localStorage.getItem('vp_cats'));if(v&&v.length)return v}catch(e){}return JSON.parse(JSON.stringify(DEFAULT));}
-function saveCats(c){try{localStorage.setItem('vp_cats',JSON.stringify(c))}catch(e){}}
+/* Persist the edited site list in native app prefs (survives app updates), falling back to localStorage. */
+function catsRaw(){try{var n=VPApp.prefGet('cats');if(n)return n}catch(e){}try{return localStorage.getItem('vp_cats')||''}catch(e){return ''}}
+function loadCats(){try{var v=JSON.parse(catsRaw());if(v&&v.length)return v}catch(e){}return JSON.parse(JSON.stringify(DEFAULT));}
+function saveCats(c){var s=JSON.stringify(c);try{VPApp.prefSet('cats',s)}catch(e){}try{localStorage.setItem('vp_cats',s)}catch(e){}}
 var CATS=loadCats(), EDIT=false;
 var cEl=document.getElementById('c');
 function render(){

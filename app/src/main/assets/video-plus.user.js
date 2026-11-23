@@ -582,14 +582,25 @@
       ['21:9',    function (v) { ratio(v, 21/9); }]
     ];
     function ratio(v, want) {
-      try { v.style.setProperty('object-fit', 'fill', 'important'); } catch (e) {}
+      // Crop to the chosen ratio: fill the box on the long axis, scale the other axis so the visible frame matches `want`.
+      try { v.style.setProperty('object-fit', 'cover', 'important'); } catch (e) {}
       var r = v.getBoundingClientRect(); if (!r.width || !r.height) { try { v.style.setProperty('transform', 'none', 'important'); } catch (e) {} return; }
       var cur = r.width / r.height, sx = 1, sy = 1;
+      // object-fit:cover already fills; we crop toward `want` by shrinking the longer side so the ratio reads clearly.
       if (want > cur) sy = cur / want; else sx = want / cur;
-      try { v.style.setProperty('transform', 'scale(' + sx + ',' + sy + ')', 'important'); } catch (e) {}
+      try { v.style.setProperty('transform', 'scale(' + sx.toFixed(4) + ',' + sy.toFixed(4) + ')', 'important'); } catch (e) {}
     }
     function applyAspect(v) { if (!v) return; try { v.style.setProperty('transform-origin', 'center center', 'important'); ASPECTS[(S.aspect || 0) % ASPECTS.length][1](v); } catch (e) {} }
     window.__vpAspect = applyAspect;
+    // Re-apply the chosen aspect continuously — sites reset <video> styles on play/seek/fullscreen, which is why it "looked the same".
+    setInterval(function () {
+      try {
+        if (!S.aspect) return;
+        var v = (document.fullscreenElement && document.fullscreenElement.tagName === 'VIDEO') ? document.fullscreenElement : target();
+        if (v && v.tagName === 'VIDEO') applyAspect(v);
+      } catch (e) {}
+    }, 1000);
+    document.addEventListener('fullscreenchange', function () { try { var v = document.fullscreenElement && document.fullscreenElement.tagName === 'VIDEO' ? document.fullscreenElement : target(); if (v) applyAspect(v); } catch (e) {} });
     $('#vp-asp').onclick = function () {
       S.aspect = ((S.aspect || 0) + 1) % ASPECTS.length; save();
       var v = target(); applyAspect(v);

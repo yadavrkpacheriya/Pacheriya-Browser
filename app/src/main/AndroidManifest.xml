@@ -42,7 +42,7 @@
             android:hardwareAccelerated="true"
             android:supportsPictureInPicture="true"
             android:windowSoftInputMode="adjustResize"
-            android:screenOrientation="user"
+            android:screenOrientation="fullUser"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|density|uiMode">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>

@@ -1005,7 +1005,8 @@ public class MainActivity extends Activity {
                 customCb = cb;
                 fsHost.addView(view, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
                 fsHost.setVisibility(View.VISIBLE);
-                setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+                // Follow the phone fully in fullscreen video: both landscape directions AND portrait, ignoring the rotation lock.
+                setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR);
                 hideBars(true);
                 refreshBadge();
             }
@@ -1603,7 +1604,7 @@ public class MainActivity extends Activity {
         customView = null;
         if (customCb != null) { try { customCb.onCustomViewHidden(); } catch (Exception e) { /* ignore */ } }
         customCb = null;
-        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_USER);
+        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_FULL_USER);
         hideBars(false);
         refreshBadge();
         final Tab zt = cur;
@@ -1808,6 +1809,16 @@ public class MainActivity extends Activity {
             if (t.incognito || t.url == null || !t.url.startsWith("file:///android_asset/")) return;
             if (title == null || url == null) return;
             Store.addHistory(sp, title, url);
+        }
+
+        /** Durable key/value store for the app's own asset pages (home site list, manga filters), kept in app prefs so updates never wipe it. */
+        @JavascriptInterface public String prefGet(String key) {
+            if (t.url == null || !t.url.startsWith("file:///android_asset/")) return "";
+            return sp.getString("kv_" + key, "");
+        }
+        @JavascriptInterface public void prefSet(String key, String val) {
+            if (t.url == null || !t.url.startsWith("file:///android_asset/")) return;
+            sp.edit().putString("kv_" + key, val).apply();
         }
 
         @JavascriptInterface public String savedList(String key) {

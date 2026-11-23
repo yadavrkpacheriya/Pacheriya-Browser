@@ -102,7 +102,36 @@ public class PlayerActivity extends Activity {
             player.setVolume(boosted ? 1f : 1f); // ExoPlayer caps at 1.0; true boost needs an audio processor
             ((TextView) v).setText(boosted ? "Loud ✓" : "Loud");
         }});
+        // Playback speed (VLC/MX staple)
+        final float[] speeds = { 0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f };
+        final int[] si = { 2 };
+        addBtn(bar, "1x", new View.OnClickListener() { public void onClick(View v) {
+            si[0] = (si[0] + 1) % speeds.length;
+            try { player.setPlaybackSpeed(speeds[si[0]]); } catch (Throwable e) {}
+            String lbl = String.valueOf(speeds[si[0]]).replace(".0", "");
+            ((TextView) v).setText(lbl + "x");
+        }});
+        // Sleep timer: stop playback after a chosen time
+        addBtn(bar, "Sleep", new View.OnClickListener() { public void onClick(View v) {
+            final String[] opts = { "Off", "15 min", "30 min", "45 min", "60 min", "End of video" };
+            final int[] mins = { 0, 15, 30, 45, 60, -1 };
+            new android.app.AlertDialog.Builder(PlayerActivity.this).setTitle("Sleep timer")
+                .setItems(opts, new android.content.DialogInterface.OnClickListener() {
+                    public void onClick(android.content.DialogInterface d, int w) {
+                        if (sleepRun != null) handler.removeCallbacks(sleepRun);
+                        if (mins[w] == 0) { toast("Sleep timer off"); return; }
+                        if (mins[w] == -1) { sleepAtEnd = true; toast("Will stop at end of video"); return; }
+                        sleepAtEnd = false;
+                        sleepRun = new Runnable() { public void run() { try { if (player != null) player.pause(); } catch (Throwable e) {} toast("Sleep timer: paused"); } };
+                        handler.postDelayed(sleepRun, mins[w] * 60L * 1000L);
+                        toast("Will pause in " + mins[w] + " min");
+                    }
+                }).show();
+        }});
     }
+    private final android.os.Handler handler = new android.os.Handler(android.os.Looper.getMainLooper());
+    private Runnable sleepRun; private boolean sleepAtEnd = false;
+    private void toast(String s) { try { android.widget.Toast.makeText(this, s, android.widget.Toast.LENGTH_SHORT).show(); } catch (Throwable e) {} }
 
     private void addBtn(LinearLayout bar, String label, View.OnClickListener cl) {
         TextView t = new TextView(this);

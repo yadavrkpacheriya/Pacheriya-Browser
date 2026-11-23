@@ -55,6 +55,19 @@
                 <data android:scheme="http"/>
                 <data android:scheme="https"/>
             </intent-filter>
+            <!-- Required for Android 13+ to list this app as a default-browser choice -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <category android:name="android.intent.category.APP_BROWSER"/>
+                <data android:scheme="http"/>
+                <data android:scheme="https"/>
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.APP_BROWSER"/>
+            </intent-filter>
         </activity>
         <receiver android:name=".InstallReceiver" android:exported="false"/>
         <receiver android:name=".UpdatedReceiver" android:exported="true">

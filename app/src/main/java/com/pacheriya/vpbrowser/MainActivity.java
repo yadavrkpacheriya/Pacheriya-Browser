@@ -1499,6 +1499,7 @@ public class MainActivity extends Activity {
             "🛡 Safe browsing (block scam sites): " + (sp.getBoolean("safebrowse", true) ? "ON" : "off"),
             "🔑 Save passwords: " + (sp.getBoolean("pwsave", true) ? "ON" : "off"),
             "Saved passwords & breach check",
+            "⭐ Set as default browser",
             "Check for update",
             "Clear browsing data"
         };
@@ -1549,8 +1550,9 @@ public class MainActivity extends Activity {
                             break;
                         }
                         case 10: showSavedPasswords(); return;
-                        case 11: Updater.check(MainActivity.this, true); return;
-                        case 12:
+                        case 11: setAsDefaultBrowser(); return;
+                        case 12: Updater.check(MainActivity.this, true); return;
+                        case 13:
                             sp.edit().putString("hist", "[]").apply();
                             CookieManager.getInstance().removeAllCookies(null);
                             cur.wv.clearCache(true);
@@ -2485,9 +2487,11 @@ public class MainActivity extends Activity {
         box.addView(menuItem(pop, "\u27F3", "Reload", 3));
 
         /* collapsible groups */
+        boolean desktop = cur != null && (cur.uaMode >= 0 ? cur.uaMode : uaMode) == 1;
         addGroup(pop, box, "\uD83D\uDCC4", "This page", new Object[][]{
             {"\uD83D\uDD12", "New private tab", 2}, {"\u21AA", "Share", 14}, {"\uD83D\uDD17", "Copy link", 13},
-            {"\uD83D\uDD0D", "Find in page", 5}, {"\uD83D\uDCD6", "Reading mode", 19}, {"\uD83C\uDF10", "Translate page", 11}
+            {"\uD83D\uDD0D", "Find in page", 5}, {"\uD83D\uDCD6", "Reading mode", 19}, {"\uD83C\uDF10", "Translate page", 11},
+            {"\uD83D\uDDA5", desktop ? "Desktop site: ON" : "Desktop site", 30}, {"\u2795", "Add to Home screen", 31}
         });
         addGroup(pop, box, "\uD83D\uDCDA", "Library", new Object[][]{
             {"\uD83D\uDCD1", "Bookmarks", 7}, {"\uD83D\uDD53", "History", 8}, {"\u2B07", "Downloads & videos", 12}
@@ -2613,6 +2617,51 @@ public class MainActivity extends Activity {
                 toast(saver ? "Data saver ON: images and fonts are skipped, saved pages load from cache" : "Data saver off");
                 cur.wv.reload();
                 break;
+            case 30: { // Desktop site toggle (per current tab)
+                if (cur != null) {
+                    int now = cur.uaMode >= 0 ? cur.uaMode : uaMode;
+                    cur.uaMode = (now == 1) ? 0 : 1; // toggle Desktop Chrome <-> Default mobile
+                    applyUa(cur); cur.wv.reload();
+                    toast(cur.uaMode == 1 ? "Desktop site ON" : "Mobile site");
+                }
+                break;
+            }
+            case 31: addToHomeScreen(); break;
+            case 32: setAsDefaultBrowser(); break;
+        }
+    }
+
+    /** Pin the current page to the launcher as a shortcut (like Chrome's "Add to Home screen"). */
+    private void addToHomeScreen() {
+        if (cur == null || cur.url == null || !cur.url.startsWith("http")) { toast("Open a web page first"); return; }
+        try {
+            String title = (cur.title == null || cur.title.isEmpty()) ? Passwords.host(cur.url) : cur.title;
+            android.content.pm.ShortcutManager sm = getSystemService(android.content.pm.ShortcutManager.class);
+            if (sm != null && sm.isRequestPinShortcutSupported()) {
+                Intent open = new Intent(Intent.ACTION_VIEW, Uri.parse(cur.url)).setPackage(getPackageName());
+                android.content.pm.ShortcutInfo si = new android.content.pm.ShortcutInfo.Builder(this, "site_" + cur.url.hashCode())
+                    .setShortLabel(title.length() > 20 ? title.substring(0, 20) : title)
+                    .setIcon(android.graphics.drawable.Icon.createWithResource(this, R.mipmap.ic_launcher))
+                    .setIntent(open).build();
+                sm.requestPinShortcut(si, null);
+            } else toast("Your launcher doesn't support adding shortcuts");
+        } catch (Throwable e) { toast("Couldn't add shortcut"); }
+    }
+
+    /** Open the system prompt to make this the default browser. */
+    private void setAsDefaultBrowser() {
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= 24) {
+                android.app.role.RoleManager rm = getSystemService(android.app.role.RoleManager.class);
+                if (rm != null && rm.isRoleAvailable(android.app.role.RoleManager.ROLE_BROWSER)) {
+                    if (rm.isRoleHeld(android.app.role.RoleManager.ROLE_BROWSER)) { toast("Already your default browser"); return; }
+                    startActivityForResult(rm.createRequestRoleIntent(android.app.role.RoleManager.ROLE_BROWSER), 7788);
+                    return;
+                }
+            }
+            startActivity(new Intent(android.provider.Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS));
+        } catch (Throwable e) {
+            try { startActivity(new Intent(android.provider.Settings.ACTION_SETTINGS)); toast("Open Apps → Default apps → Browser"); } catch (Throwable x) { toast("Open Settings → Default apps to set the browser"); }
         }
     }
 

@@ -1820,6 +1820,15 @@ public class MainActivity extends Activity {
             Store.addHistory(sp, title, url);
         }
 
+        /** Active download tasks (for the in-app Downloads screen): [{id,name,done,total,state}]. */
+        @JavascriptInterface public String dlTasks() {
+            if (t.url == null || !t.url.startsWith("file:///android_asset/")) return "[]";
+            return Downloader.tasksJson();
+        }
+        @JavascriptInterface public void dlPause(String id)  { if (t.url != null && t.url.startsWith("file:///android_asset/")) Downloader.pause(id); }
+        @JavascriptInterface public void dlResume(String id) { if (t.url != null && t.url.startsWith("file:///android_asset/")) Downloader.resume(id, MainActivity.this); }
+        @JavascriptInterface public void dlCancel(String id) { if (t.url != null && t.url.startsWith("file:///android_asset/")) Downloader.cancel(id); }
+
         /** Durable key/value store for the app's own asset pages (home site list, manga filters), kept in app prefs so updates never wipe it. */
         /** The page script calls this only when the user taps a real link/button — authorizes a cross-site navigation. */
         @JavascriptInterface public void realTap() { t.lastRealTap = System.currentTimeMillis(); }

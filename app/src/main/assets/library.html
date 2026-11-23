@@ -23,9 +23,33 @@ h2{margin:0 0 8px;font-size:19px}
 <div class="tabs"><button id="tA" class="on">All device videos</button><button id="tD">Downloads</button></div>
 <input id="search" placeholder="Search videos…">
 </header>
+<div id="active"></div>
 <div id="list"><div class="empty">Loading…</div></div>
 <script>
 var mode='all', all=[], dl=[];
+/* ---- active downloads (pause/resume/cancel, 1DM-style) ---- */
+function mbA(n){n=+n||0;return n>1073741824?(n/1073741824).toFixed(2)+' GB':(n/1048576).toFixed(0)+' MB';}
+function renderActive(){
+ var tasks=[];try{tasks=JSON.parse(VPApp.dlTasks())}catch(e){}
+ var a=document.getElementById('active');
+ var live=tasks.filter(function(t){return t.state!=='done'&&t.state!=='cancelled'});
+ if(!live.length){a.innerHTML='';return}
+ a.innerHTML='<div style="font-size:13px;color:#E2B33C;margin:4px 2px 8px">Active downloads</div>';
+ live.forEach(function(t){
+  var pct=t.total?Math.floor(t.done*100/t.total):0;
+  var d=document.createElement('div');d.style.cssText='background:#17171e;border-radius:10px;padding:10px 12px;margin-bottom:8px';
+  d.innerHTML='<div style="font-size:13px;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(t.name||'file').replace(/</g,'&lt;')+'</div>'+
+   '<div style="height:6px;background:#2a2a33;border-radius:3px;margin:7px 0;overflow:hidden"><div style="height:100%;width:'+pct+'%;background:#E2B33C"></div></div>'+
+   '<div style="display:flex;align-items:center;gap:8px;font-size:12px;color:#9aa"><span style="flex:1">'+mbA(t.done)+' / '+mbA(t.total)+' · '+pct+'% · '+t.state+'</span></div>';
+  var row=document.createElement('div');row.style.cssText='display:flex;gap:8px;margin-top:8px';
+  function btn(lbl,fn){var b=document.createElement('button');b.textContent=lbl;b.style.cssText='flex:1;background:#2a2a33;color:#fff;border:0;border-radius:8px;padding:8px;font-size:13px';b.onclick=fn;return b}
+  if(t.state==='paused'||t.state==='queued')row.appendChild(btn('Resume',function(){try{VPApp.dlResume(t.id)}catch(e){}renderActive()}));
+  else row.appendChild(btn('Pause',function(){try{VPApp.dlPause(t.id)}catch(e){}renderActive()}));
+  row.appendChild(btn('Cancel',function(){try{VPApp.dlCancel(t.id)}catch(e){}renderActive()}));
+  d.appendChild(row);a.appendChild(d);
+ });
+}
+setInterval(renderActive,1000);renderActive();
 function mb(n){n=+n||0;return n>1073741824?(n/1073741824).toFixed(1)+' GB':n>1048576?(n/1048576).toFixed(0)+' MB':(n/1024).toFixed(0)+' KB';}
 function dur(ms){ms=+ms||0;var s=Math.round(ms/1000),m=Math.floor(s/60);s=s%60;return m?(m+':'+(s<10?'0':'')+s):'';}
 function play(f){try{VPApp.playDownload(f.uri,f.mime)}catch(e){}}

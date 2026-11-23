@@ -90,5 +90,6 @@
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|smallestScreenSize|density|uiMode"
             android:screenOrientation="fullUser"
             android:exported="false" />
+        <receiver android:name=".DlActionReceiver" android:exported="false"/>
     </application>
 </manifest>

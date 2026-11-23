@@ -6,6 +6,7 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.content.ContentValues;
 import android.content.Context;
+import android.content.Intent;
 import android.net.Uri;
 import android.os.Environment;
 import android.os.Handler;
@@ -36,6 +37,48 @@ final class Downloader {
     private static final Handler UI = new Handler(Looper.getMainLooper());
     private static int nid = 100;
 
+    /* ---- 1DM-style task registry: pause / resume / cancel / queue ---- */
+    static class Task {
+        String id, name, url, ua, ref;
+        long total, done;
+        volatile boolean paused, cancelled, running, finished;
+        int notifId;
+        java.io.File out;
+    }
+    static final java.util.LinkedHashMap<String, Task> TASKS = new java.util.LinkedHashMap<>();
+    private static final java.util.concurrent.atomic.AtomicInteger ACTIVE = new java.util.concurrent.atomic.AtomicInteger(0);
+    private static final int MAX_CONCURRENT = 3;          // queue: run up to 3 at once (1DM default-ish)
+    private static final java.util.ArrayDeque<Runnable> QUEUE = new java.util.ArrayDeque<>();
+
+    static synchronized void pause(String id)  { Task t = TASKS.get(id); if (t != null) t.paused = true; }
+    static synchronized void resume(String id, Context c) {
+        Task t = TASKS.get(id); if (t == null || t.running || t.finished) return;
+        t.paused = false; t.cancelled = false;
+        startParallel(c, t);   // resumes from t.done via range requests
+    }
+    static synchronized void cancel(String id) { Task t = TASKS.get(id); if (t != null) { t.cancelled = true; t.paused = false; } }
+    static synchronized String tasksJson() {
+        StringBuilder b = new StringBuilder("[");
+        boolean first = true;
+        for (Task t : TASKS.values()) {
+            if (!first) b.append(","); first = false;
+            String st = t.finished ? "done" : t.cancelled ? "cancelled" : t.paused ? "paused" : t.running ? "running" : "queued";
+            b.append("{\"id\":\"").append(t.id).append("\",\"name\":").append(org.json.JSONObject.quote(t.name == null ? "" : t.name))
+             .append(",\"done\":").append(t.done).append(",\"total\":").append(t.total)
+             .append(",\"state\":\"").append(st).append("\"}");
+        }
+        return b.append("]").toString();
+    }
+    private static synchronized void enqueue(Runnable r) {
+        if (ACTIVE.get() < MAX_CONCURRENT) { ACTIVE.incrementAndGet(); new Thread(r).start(); }
+        else QUEUE.add(r);
+    }
+    private static synchronized void slotFreed() {
+        ACTIVE.decrementAndGet();
+        Runnable r = QUEUE.poll();
+        if (r != null) { ACTIVE.incrementAndGet(); new Thread(r).start(); }
+    }
+
     static void toast(final Context c, final String s) {
         UI.post(new Runnable() { public void run() { Toast.makeText(c, s, Toast.LENGTH_LONG).show(); } });
     }
@@ -59,8 +102,15 @@ final class Downloader {
             public void run() {
                 long total = size(url, ua, ref);
                 /* 1DM-style: if the server supports ranges and the file is big enough, fetch it with many
-                   parallel connections; otherwise fall back to the system downloader */
-                if (total > 3_000_000L && parallelDirect(c, url, ua, ref, fn, total)) return;
+                   parallel connections AND register it as a pausable/resumable task; else system downloader */
+                if (total > 3_000_000L) {
+                    Task t = new Task();
+                    t.id = "d" + System.nanoTime(); t.name = fn; t.url = url; t.ua = ua; t.ref = ref;
+                    t.total = total; t.done = 0; t.notifId = (int) (System.nanoTime() & 0x3fffffff);
+                    synchronized (Downloader.class) { TASKS.put(t.id, t); }
+                    if (startParallel(c, t)) return;
+                    synchronized (Downloader.class) { TASKS.remove(t.id); }
+                }
                 try {
                     DownloadManager.Request r = new DownloadManager.Request(Uri.parse(url));
                     r.setTitle(fn);
@@ -77,69 +127,106 @@ final class Downloader {
         }).start();
     }
 
-    /** Download one file with up to 32 parallel range connections (1DM style). Returns false to fall back. */
-    private static boolean parallelDirect(final Context c, final String url, final String ua, final String ref, String fn, final long total) {
-        final int N = 32;
+    /**
+     * 1DM-style resumable, pausable parallel download, queued (max 3 concurrent). Runs on a worker thread.
+     * Returns true if it took ownership of the download (whether it finishes now, is paused, or queued).
+     */
+    private static boolean startParallel(final Context c, final Task t) {
+        // quick capability check: server must support range requests
         try {
-            java.io.File dir = new java.io.File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "VideoPlus");
-            dir.mkdirs();
-            final java.io.File out = new java.io.File(dir, fn);
-            final java.io.RandomAccessFile raf = new java.io.RandomAccessFile(out, "rw");
-            raf.setLength(total);
-            final long chunk = (total + N - 1) / N;
+            HttpURLConnection probe = open(t.url, t.ua, t.ref);
+            probe.setRequestProperty("Range", "bytes=0-0");
+            int pc = probe.getResponseCode();
+            probe.disconnect();
+            if (pc != 206) return false; // no range support → caller falls back to system downloader
+        } catch (Throwable e) { return false; }
+
+        enqueue(new Runnable() { public void run() {
+            final int N = 32;
             final NotificationManager nm = (NotificationManager) c.getSystemService(Context.NOTIFICATION_SERVICE);
-            try { nm.createNotificationChannel(new NotificationChannel("dl", "Downloads", NotificationManager.IMPORTANCE_LOW)); } catch (Throwable e) { /* ignore */ }
-            final int nid = (int) (System.nanoTime() & 0x3fffffff);
-            final java.util.concurrent.atomic.AtomicLong done = new java.util.concurrent.atomic.AtomicLong(0);
-            final java.util.concurrent.atomic.AtomicBoolean fail = new java.util.concurrent.atomic.AtomicBoolean(false);
-            java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(N);
-            List<java.util.concurrent.Future<?>> fs = new ArrayList<java.util.concurrent.Future<?>>();
-            for (int i = 0; i < N; i++) {
-                final long start = i * chunk;
-                if (start >= total) break;
-                final long end = Math.min(total - 1, start + chunk - 1);
-                fs.add(pool.submit(new Runnable() {
-                    public void run() {
+            try { nm.createNotificationChannel(new NotificationChannel("dl", "Downloads", NotificationManager.IMPORTANCE_LOW)); } catch (Throwable e) {}
+            java.util.concurrent.ExecutorService pool = null;
+            try {
+                java.io.File dir = new java.io.File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "VideoPlus");
+                dir.mkdirs();
+                final java.io.File out = new java.io.File(dir, t.name);
+                t.out = out; t.running = true;
+                final java.io.RandomAccessFile raf = new java.io.RandomAccessFile(out, "rw");
+                if (raf.length() != t.total) raf.setLength(t.total);
+                final long startedAt = t.done;
+                final long remaining = t.total - t.done;
+                final long chunk = (remaining + N - 1) / N;
+                final java.util.concurrent.atomic.AtomicBoolean fail = new java.util.concurrent.atomic.AtomicBoolean(false);
+                pool = java.util.concurrent.Executors.newFixedThreadPool(Math.min(N, 32));
+                List<java.util.concurrent.Future<?>> fs = new ArrayList<java.util.concurrent.Future<?>>();
+                for (int i = 0; i < N; i++) {
+                    final long start = startedAt + i * chunk;
+                    if (start >= t.total) break;
+                    final long end = Math.min(t.total - 1, start + chunk - 1);
+                    fs.add(pool.submit(new Runnable() { public void run() {
                         try {
-                            HttpURLConnection h = open(url, ua, ref);
+                            HttpURLConnection h = open(t.url, t.ua, t.ref);
                             h.setRequestProperty("Range", "bytes=" + start + "-" + end);
                             if (h.getResponseCode() != 206) throw new Exception("no range");
                             InputStream in = h.getInputStream();
                             byte[] buf = new byte[65536]; long pos = start; int n;
                             while ((n = in.read(buf)) > 0) {
+                                if (t.cancelled || t.paused) { in.close(); return; }
                                 synchronized (raf) { raf.seek(pos); raf.write(buf, 0, n); }
-                                pos += n; done.addAndGet(n);
+                                pos += n; synchronized (t) { t.done += n; }
                             }
                             in.close();
-                        } catch (Exception e) { fail.set(true); }
-                    }
-                }));
-            }
-            // progress
-            new Thread(new Runnable() { public void run() {
-                while (!fail.get()) {
-                    long d = done.get();
-                    try {
-                        Notification n = new Notification.Builder(c, "dl").setSmallIcon(android.R.drawable.stat_sys_download)
-                            .setContentTitle(out.getName()).setContentText((d / 1048576) + " / " + (total / 1048576) + " MB (32 parts)")
-                            .setProgress(100, (int) (d * 100 / Math.max(1, total)), false).setOngoing(true).build();
-                        nm.notify(nid, n);
-                    } catch (Throwable e) { /* ignore */ }
-                    if (d >= total) break;
-                    try { Thread.sleep(700); } catch (Exception e) { break; }
+                        } catch (Exception e) { if (!t.paused && !t.cancelled) fail.set(true); }
+                    }}));
                 }
-            }}).start();
-            for (java.util.concurrent.Future<?> f : fs) f.get();
-            pool.shutdownNow();
-            raf.close();
-            if (fail.get()) { out.delete(); return false; }
-            try { android.media.MediaScannerConnection.scanFile(c, new String[]{ out.getAbsolutePath() }, null, null); } catch (Throwable e) {}
-            Notification dn = new Notification.Builder(c, "dl").setSmallIcon(android.R.drawable.stat_sys_download_done)
-                .setContentTitle(out.getName()).setContentText("Saved to Downloads/VideoPlus").setAutoCancel(true).build();
-            nm.notify(nid, dn);
-            toast(c, "Saved: " + out.getName());
-            return true;
-        } catch (Throwable e) { return false; }
+                // progress + pause/resume/cancel notification
+                final java.util.concurrent.ExecutorService fpool = pool;
+                new Thread(new Runnable() { public void run() {
+                    while (t.running && !fail.get()) {
+                        try {
+                            Intent pi = new Intent(c, DlActionReceiver.class).setAction(t.paused ? "resume" : "pause").putExtra("id", t.id);
+                            Intent ci = new Intent(c, DlActionReceiver.class).setAction("cancel").putExtra("id", t.id);
+                            int fl = android.os.Build.VERSION.SDK_INT >= 31 ? android.app.PendingIntent.FLAG_IMMUTABLE : 0;
+                            android.app.PendingIntent pp = android.app.PendingIntent.getBroadcast(c, t.notifId, pi, android.app.PendingIntent.FLAG_UPDATE_CURRENT | fl);
+                            android.app.PendingIntent cp = android.app.PendingIntent.getBroadcast(c, t.notifId + 1, ci, android.app.PendingIntent.FLAG_UPDATE_CURRENT | fl);
+                            Notification n = new Notification.Builder(c, "dl").setSmallIcon(android.R.drawable.stat_sys_download)
+                                .setContentTitle(out.getName())
+                                .setContentText((t.done / 1048576) + " / " + (t.total / 1048576) + " MB" + (t.paused ? " — paused" : " (32 parts)"))
+                                .setProgress(100, (int) (t.done * 100 / Math.max(1, t.total)), false).setOngoing(!t.paused)
+                                .addAction(0, t.paused ? "Resume" : "Pause", pp).addAction(0, "Cancel", cp).build();
+                            nm.notify(t.notifId, n);
+                        } catch (Throwable e) {}
+                        if (t.done >= t.total || t.paused || t.cancelled) break;
+                        try { Thread.sleep(700); } catch (Exception e) { break; }
+                    }
+                }}).start();
+                for (java.util.concurrent.Future<?> f : fs) f.get();
+                pool.shutdownNow();
+                raf.close();
+                t.running = false;
+
+                if (t.cancelled) { out.delete(); nm.cancel(t.notifId); synchronized (Downloader.class) { TASKS.remove(t.id); } return; }
+                if (t.paused) {
+                    // leave the partial file; a notification with Resume stays
+                    return;
+                }
+                if (fail.get() || t.done < t.total) { // transient failure: mark paused so user can resume
+                    t.paused = true; return;
+                }
+                t.finished = true;
+                try { android.media.MediaScannerConnection.scanFile(c, new String[]{ out.getAbsolutePath() }, null, null); } catch (Throwable e) {}
+                Notification dn = new Notification.Builder(c, "dl").setSmallIcon(android.R.drawable.stat_sys_download_done)
+                    .setContentTitle(out.getName()).setContentText("Saved to Downloads/VideoPlus").setAutoCancel(true).build();
+                nm.notify(t.notifId, dn);
+                toast(c, "Saved: " + out.getName());
+            } catch (Throwable e) {
+                t.running = false; t.paused = true; // allow resume
+            } finally {
+                if (pool != null) try { pool.shutdownNow(); } catch (Throwable e) {}
+                slotFreed();
+            }
+        }});
+        return true;
     }
 
     /** Remux a raw .ts (transport stream) into a standard .mp4 using Android's own MediaMuxer (no FFmpeg). */

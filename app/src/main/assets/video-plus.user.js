@@ -60,35 +60,29 @@
     ast.textContent = 'ins.adsbygoogle,[class~="adsbygoogle"],[id^="google_ads"],iframe[src*="doubleclick"],iframe[src*="googlesyndication"],iframe[src*="exoclick"],iframe[src*="juicyads"],iframe[src*="trafficjunky"],iframe[src*="adsterra"],iframe[src*="popads"],[class~="ad-banner"],[class~="ads-container"],[class*="adsbox"],[class*="ad-slot"],[class*="ad-container"],[class*="ad-wrapper"],[class*="advertisement"],[id*="ad-slot"],[id*="ad-container"],[data-ad],[data-ad-slot],.google-auto-placed,.adsbygoogle-noablate{display:none!important;height:0!important;min-height:0!important}';
     document.documentElement.appendChild(ast);
 
-    /* ---- collapse leftover ad "black boxes": empty reserved ad slots and ad iframes ---- */
+    /* ---- collapse leftover ad "black boxes" — conservative: only clear ad units, never the page's own content ---- */
+    // ad-specific class/id patterns with word boundaries (won't match "header", "loading", "download", "read", etc.)
+    var AD_CLS = /(^|[\s_-])(ad|ads|adbox|ad-box|adslot|ad-slot|adunit|ad-unit|adzone|ad-zone|adframe|ad-wrapper|ad-container|advertisement|adsbygoogle|google-ad|googlead|sponsor|sponsored)($|[\s_-])/i;
     function killAdBoxes() {
       try {
-        // iframes whose src is an ad host, or that sit in an ad-ish container
+        // iframes pointing at a known ad/sketchy host only
         [].forEach.call(document.querySelectorAll('iframe'), function (f) {
           var s = f.getAttribute('src') || '';
-          if (bad(s) || sketchy(s) || /ad|banner|sponsor|promo/i.test((f.id || '') + ' ' + (f.className || '') + ' ' + (f.name || ''))) { collapse(f); }
+          if (s && (bad(s) || sketchy(s))) collapse(f);
         });
-        // reserved empty boxes sized like ad units with no real content
-        [].forEach.call(document.querySelectorAll('div,ins,aside,section'), function (d) {
-          if (d.__vpkept) return;
-          var cls = ((d.id || '') + ' ' + (d.className || '')).toLowerCase();
-          if (/(^|[\s_-])ad(s|vert|box|slot|unit|frame|zone|banner)?([\s_-]|$)|sponsor|googlead|adsbygoogle/.test(cls)) {
-            var r = d.getBoundingClientRect();
-            var hasText = (d.innerText || '').trim().length > 20;
-            var hasMedia = d.querySelector('img,video,canvas');
-            if (!hasText && (!hasMedia || /googlesyndication|doubleclick/.test(d.innerHTML))) collapse(d);
-          }
+        // elements with an ad-specific class/id — but NEVER if they contain the page's real text or are large content blocks
+        [].forEach.call(document.querySelectorAll('ins.adsbygoogle,[class*="adsbygoogle"],[id^="google_ads"],[id*="ad-slot"],[id*="ad-container"],[data-ad],[data-ad-slot]'), function (d) { collapse(d); });
+        [].forEach.call(document.querySelectorAll('div,ins,aside'), function (d) {
+          var cls = ((d.id || '') + ' ' + (typeof d.className === 'string' ? d.className : '')).toLowerCase();
+          if (!AD_CLS.test(cls)) return;
+          // safety: don't hide anything that holds a meaningful amount of text (that's content, not an ad)
+          if ((d.innerText || '').trim().length > 40) return;
+          collapse(d);
         });
-        // "Problematic ad? / Become a contributor / disable ad blocker" notices
-        [].forEach.call(document.querySelectorAll('div,p,span,a'), function (d) {
-          var t = (d.innerText || '').trim();
-          if (t && t.length < 120 && /problematic ad|become a contributor|disable your ad|report it here|you can disable popup/i.test(t)) {
-            var box = d.closest('div,section,aside') || d; if ((box.innerText || '').length < 220) collapse(box);
-          }
-        });
+        // ad iframes/scripts from ad hosts, by element src (already blocked at load, this cleans visible frames)
       } catch (e) {}
     }
-    function collapse(el) { try { el.style.setProperty('display', 'none', 'important'); el.style.setProperty('height', '0', 'important'); } catch (e) {} }
+    function collapse(el) { try { el.style.setProperty('display', 'none', 'important'); el.style.setProperty('height', '0', 'important'); el.style.setProperty('min-height', '0', 'important'); } catch (e) {} }
     killAdBoxes();
     try { new MutationObserver(function () { killAdBoxes(); }).observe(document.documentElement, { childList: true, subtree: true }); } catch (e) {}
     setInterval(killAdBoxes, 2000);

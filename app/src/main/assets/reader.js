@@ -62,12 +62,18 @@
     var c = doc.querySelectorAll('article, main, [role=main], .post, .entry-content, .article, #content, .content, .chapter-content, .chapter-body, #chapter-content, .chapter, .reading-content, .text-left, .entry, section, div'), top = null, sc = 0;
     for (var i = 0; i < c.length; i++) {
       if (isJunk(c[i])) continue;
+      // never pick the browser's own injected UI (it holds CSS/script text that would show as gibberish)
+      if (c[i].id && /^vp(lus)?-/.test(c[i].id)) continue;
+      if (c[i].closest && c[i].closest('#vplus-root,#vp-bar,#vp-panel,#vp-fab,style,script')) continue;
+      if (c[i].querySelector && c[i].querySelector('style,script') && (c[i].innerText || '').indexOf('{') >= 0 && /box-sizing|font-family|border-radius/.test(c[i].innerText || '')) continue;
       var ps = c[i].querySelectorAll('p'), s = 0, pcount = 0;
       for (var j = 0; j < ps.length; j++) { var t = txt(ps[j]); if (t.length > 40 && ps[j].closest('nav,footer,aside,header') === null) { s += t.length; pcount++; } }
       /* fallback: novel sites often use bare text / <br> lines with no <p>. Score the element's own direct text too. */
       if (pcount < 2) {
         var own = txt(c[i]).trim();
-        if (own.length > 400 && c[i].querySelectorAll('a,nav,ul,form').length < 8 && !c[i].querySelector('article,main,section')) s = Math.max(s, own.length * 0.9);
+        // reject CSS/JS-looking blobs (e.g. an injected <style>): lots of {};: and no sentence spaces
+        var cssLike = (own.match(/[{};]/g) || []).length > 8 && /\{[^}]*:[^}]*\}/.test(own);
+        if (!cssLike && own.length > 400 && c[i].querySelectorAll('a,nav,ul,form').length < 8 && !c[i].querySelector('article,main,section')) s = Math.max(s, own.length * 0.9);
       }
       var links = 0, as = c[i].querySelectorAll('a');
       for (var k = 0; k < as.length; k++) links += txt(as[k]).length;

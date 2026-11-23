@@ -283,6 +283,7 @@
     }, { passive: true });
     box.addEventListener('click', function () { showBar(!!bar.__hid); });
     R.on = true; paint(); chrome(true);
+    try { VPApp.swipeEnable(false); } catch (e) {} // stop pull-to-refresh reloading the page when scrolling up in the reader
     if (R.auto) { R.tl = R.auto; tb.textContent = 'Translate: ' + R.tl.toUpperCase(); doTr(); }
     /* do NOT prefetch on open — wait until the user actually scrolls near the end (avoids bot-like rapid requests) */
   }
@@ -291,7 +292,7 @@
     if (!R.tl) { ps.forEach(function (c) { c.textContent = c.__src; }); return; }
     tr(ps.map(function (c) { return c.__src; }), R.tl, function (out) { ps.forEach(function (c, i) { if (out[i]) c.textContent = out[i]; }); });
   }
-  function off() { if (ov && ov.parentNode) ov.parentNode.removeChild(ov); R.on = false; chrome(false); try { sessionStorage.removeItem('__vpReopen'); } catch (e) {} }
+  function off() { if (ov && ov.parentNode) ov.parentNode.removeChild(ov); R.on = false; chrome(false); try { VPApp.swipeEnable(true); } catch (e) {} try { sessionStorage.removeItem('__vpReopen'); } catch (e) {} }
   R.toggle = function () { if (R.on) off(); else on(); };
   /* page(): called on every load. If the user was reading and tapped Next/Prev (or we navigated for them),
      reopen reader mode automatically so they never leave it. Retries while the JS page builds its content. */

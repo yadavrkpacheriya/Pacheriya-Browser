@@ -1656,6 +1656,10 @@ public class MainActivity extends Activity {
         @JavascriptInterface public void chrome(final boolean hide) {
             ui.post(new Runnable() { public void run() { if (t == cur) setReadMode(hide); } });
         }
+        /** Reader mode turns pull-to-refresh off (so scrolling up doesn't reload the page) and back on when it closes. */
+        @JavascriptInterface public void swipeEnable(final boolean on) {
+            ui.post(new Runnable() { public void run() { if (t.swipe != null) t.swipe.setEnabled(on); } });
+        }
         @JavascriptInterface public void subInit(final String model) {
             ui.post(new Runnable() { public void run() { subTab = t; subCall("init", "'" + model.replaceAll("[^a-z]", "") + "'"); } });
         }

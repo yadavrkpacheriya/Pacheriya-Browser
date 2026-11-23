@@ -851,6 +851,15 @@ public class MainActivity extends Activity {
 
             @Override public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest r) {
                 String sc = r.getUrl().getScheme();
+                // Safe-browsing: warn before loading a known phishing/scam/malware-pattern host (when protection is on).
+                if (r.isForMainFrame() && ("http".equals(sc) || "https".equals(sc)) && sp.getBoolean("safebrowse", true) && Security.isDangerousHost(r.getUrl().toString())) {
+                    final String bad = r.getUrl().toString();
+                    if (!bad.equals(sp.getString("safebrowse_skip", ""))) {
+                        ui.post(new Runnable() { public void run() { warnDanger(bad); } });
+                        return true;
+                    }
+                    sp.edit().remove("safebrowse_skip").apply(); // one-time pass used
+                }
                 // Google/Microsoft/Apple block sign-in inside WebViews. Primary fix: present a clean Chrome UA on the auth
                 // host so the in-app WebView is accepted (no other browser needed). We let the navigation proceed here;
                 // the UA swap happens in onPageStarted. Custom Tab is only a manual fallback (menu) if a site still refuses.
@@ -1482,6 +1491,10 @@ public class MainActivity extends Activity {
             "Browser identity: " + UA_NAMES[uaMode],
             "Text size: " + textZoom + "%",
             "Search engine: " + engine,
+            "🔒 App lock (fingerprint): " + (sp.getBoolean("applock", false) ? "ON" : "off"),
+            "🛡 Safe browsing (block scam sites): " + (sp.getBoolean("safebrowse", true) ? "ON" : "off"),
+            "🔑 Save passwords: " + (sp.getBoolean("pwsave", true) ? "ON" : "off"),
+            "Saved passwords & breach check",
             "Check for update",
             "Clear browsing data"
         };
@@ -1512,8 +1525,28 @@ public class MainActivity extends Activity {
                             return;
                         case 5: pickZoom(); return;
                         case 6: pickEngine(); return;
-                        case 7: Updater.check(MainActivity.this, true); return;
-                        case 8:
+                        case 7: {
+                            boolean on = !sp.getBoolean("applock", false);
+                            sp.edit().putBoolean("applock", on).apply();
+                            if (on) { unlocked = false; appLockGate(); toast("App lock on: fingerprint/PIN needed to open"); }
+                            else toast("App lock off");
+                            break;
+                        }
+                        case 8: {
+                            boolean on = !sp.getBoolean("safebrowse", true);
+                            sp.edit().putBoolean("safebrowse", on).apply();
+                            toast(on ? "Safe browsing on" : "Safe browsing off");
+                            break;
+                        }
+                        case 9: {
+                            boolean on = !sp.getBoolean("pwsave", true);
+                            sp.edit().putBoolean("pwsave", on).apply();
+                            toast(on ? "Password saving on" : "Password saving off");
+                            break;
+                        }
+                        case 10: showSavedPasswords(); return;
+                        case 11: Updater.check(MainActivity.this, true); return;
+                        case 12:
                             sp.edit().putString("hist", "[]").apply();
                             CookieManager.getInstance().removeAllCookies(null);
                             cur.wv.clearCache(true);
@@ -1768,6 +1801,13 @@ public class MainActivity extends Activity {
         @JavascriptInterface public String pwGet() {
             if (t.incognito || t.url == null || !t.url.startsWith("http")) return "[]";
             return Passwords.forUrl(MainActivity.this, t.url).toString();
+        }
+
+        /** Let the app's own asset pages (manga, finder, library) record a readable history entry. Guarded to asset origin. */
+        @JavascriptInterface public void histAdd(String title, String url) {
+            if (t.incognito || t.url == null || !t.url.startsWith("file:///android_asset/")) return;
+            if (title == null || url == null) return;
+            Store.addHistory(sp, title, url);
         }
 
         @JavascriptInterface public String savedList(String key) {
@@ -2213,6 +2253,111 @@ public class MainActivity extends Activity {
         else { lockIcon.setText("🌐"); lockIcon.setTextColor(0xFF9AA0AA); }
     }
 
+    /** Warn before opening a flagged phishing/scam host; let the user back out or proceed. */
+    private void warnDanger(final String url) {
+        String host = Passwords.host(url);
+        new AlertDialog.Builder(this)
+            .setTitle("⚠ Dangerous site blocked")
+            .setMessage("“" + host + "” looks like a phishing or scam site. Opening it could steal your passwords or money.\n\nGo back to safety?")
+            .setPositiveButton("Back to safety", new DialogInterface.OnClickListener() { public void onClick(DialogInterface d, int w) { if (cur != null && cur.wv.canGoBack()) cur.wv.goBack(); else if (cur != null) cur.wv.loadUrl(HOME); } })
+            .setNegativeButton("Open anyway (unsafe)", new DialogInterface.OnClickListener() { public void onClick(DialogInterface d, int w) { if (cur != null) { cur.lastTap = System.currentTimeMillis(); String old = sp.getString("safebrowse_skip", ""); sp.edit().putString("safebrowse_skip", url).apply(); cur.wv.loadUrl(url); } } })
+            .show();
+    }
+
+    /** Saved-logins screen: list sites, delete entries, and run a safe breach check. */
+    private void showSavedPasswords() {
+        final org.json.JSONArray list = Passwords.list(MainActivity.this);
+        if (list.length() == 0) { new AlertDialog.Builder(this).setTitle("Saved passwords").setMessage("No saved logins yet. When you sign in to a site, the app will offer to save it (encrypted by your phone's secure chip).").setPositiveButton("OK", null).show(); return; }
+        final String[] labels = new String[list.length()];
+        for (int i = 0; i < list.length(); i++) { org.json.JSONObject o = list.optJSONObject(i); labels[i] = o.optString("h") + (o.optString("u").isEmpty() ? "" : "  (" + o.optString("u") + ")"); }
+        new AlertDialog.Builder(this).setTitle("Saved passwords (" + list.length() + ")")
+            .setItems(labels, new DialogInterface.OnClickListener() {
+                public void onClick(DialogInterface d, final int i) {
+                    final org.json.JSONObject o = list.optJSONObject(i);
+                    new AlertDialog.Builder(MainActivity.this).setTitle(o.optString("h"))
+                        .setItems(new String[]{"Delete this login", "Check if breached"}, new DialogInterface.OnClickListener() {
+                            public void onClick(DialogInterface dd, int w) {
+                                if (w == 0) { Passwords.delete(MainActivity.this, o.optString("h"), o.optString("u")); toast("Login deleted"); }
+                                else breachCheck(o.optString("h"), o.optString("u"));
+                            }
+                        }).show();
+                }
+            })
+            .setNeutralButton("Check all for breaches", new DialogInterface.OnClickListener() {
+                public void onClick(DialogInterface d, int w) { breachCheckAll(); }
+            })
+            .setPositiveButton("Close", null).show();
+    }
+
+    /** HaveIBeenPwned range API: only the first 5 chars of the password's SHA-1 are sent; the password never leaves the phone. */
+    private void breachCheck(final String host, final String user) {
+        toast("Checking… (your password is never sent)");
+        new Thread(new Runnable() { public void run() {
+            final int n = breachCount(host, user);
+            ui.post(new Runnable() { public void run() {
+                if (n < 0) toast("Couldn't check right now");
+                else if (n == 0) new AlertDialog.Builder(MainActivity.this).setTitle("✅ Safe").setMessage("This password for " + host + " was not found in known breaches.").setPositiveButton("OK", null).show();
+                else new AlertDialog.Builder(MainActivity.this).setTitle("⚠ Breached").setMessage("This password appeared in " + n + " known data breaches. Change it on " + host + " soon.").setPositiveButton("OK", null).show();
+            } });
+        } }).start();
+    }
+    private void breachCheckAll() {
+        toast("Checking all logins…");
+        new Thread(new Runnable() { public void run() {
+            org.json.JSONArray list = Passwords.list(MainActivity.this);
+            final java.util.List<String> bad = new java.util.ArrayList<>();
+            for (int i = 0; i < list.length(); i++) { org.json.JSONObject o = list.optJSONObject(i); if (breachCount(o.optString("h"), o.optString("u")) > 0) bad.add(o.optString("h")); }
+            ui.post(new Runnable() { public void run() {
+                if (bad.isEmpty()) new AlertDialog.Builder(MainActivity.this).setTitle("✅ All clear").setMessage("None of your saved passwords were found in known breaches.").setPositiveButton("OK", null).show();
+                else new AlertDialog.Builder(MainActivity.this).setTitle("⚠ Breached passwords").setMessage("Change your password on:\n\n" + android.text.TextUtils.join("\n", bad)).setPositiveButton("OK", null).show();
+            } });
+        } }).start();
+    }
+    /** Returns breach count for one saved credential, or -1 on error. Uses k-anonymity: sends only a 5-char hash prefix. */
+    private int breachCount(String host, String user) {
+        try {
+            org.json.JSONArray creds = Passwords.forUrl(MainActivity.this, "https://" + host + "/");
+            String pass = null;
+            for (int i = 0; i < creds.length(); i++) { org.json.JSONObject o = creds.optJSONObject(i); if (user.equals(o.optString("u"))) { pass = o.optString("p"); break; } }
+            if (pass == null || pass.isEmpty()) return -1;
+            String sha = Security.sha1Upper(pass); if (sha.length() < 5) return -1;
+            String prefix = sha.substring(0, 5), suffix = sha.substring(5);
+            java.net.HttpURLConnection c = (java.net.HttpURLConnection) new java.net.URL("https://api.pwnedpasswords.com/range/" + prefix).openConnection();
+            c.setConnectTimeout(8000); c.setReadTimeout(8000);
+            c.setRequestProperty("User-Agent", "VideoPlusBrowser");
+            java.io.BufferedReader br = new java.io.BufferedReader(new java.io.InputStreamReader(c.getInputStream()));
+            String line; int count = 0;
+            while ((line = br.readLine()) != null) { int co = line.indexOf(':'); if (co > 0 && line.substring(0, co).equalsIgnoreCase(suffix)) { try { count = Integer.parseInt(line.substring(co + 1).trim()); } catch (Exception e) {} break; } }
+            br.close();
+            return count;
+        } catch (Throwable e) { return -1; }
+    }
+
+    /** Biometric / device-credential lock shown over the app when app-lock is enabled. */
+    private boolean unlocked = false;
+    private void appLockGate() {
+        if (unlocked || !sp.getBoolean("applock", false)) { unlocked = true; return; }
+        try {
+            // Framework BiometricPrompt (API 28+) works with a plain Activity; it falls back to device PIN/pattern.
+            android.hardware.biometrics.BiometricPrompt.Builder b = new android.hardware.biometrics.BiometricPrompt.Builder(this)
+                .setTitle("Unlock Video Plus Browser")
+                .setSubtitle("Verify it's you to continue");
+            if (android.os.Build.VERSION.SDK_INT >= 30) b.setAllowedAuthenticators(
+                android.hardware.biometrics.BiometricManager.Authenticators.BIOMETRIC_WEAK | android.hardware.biometrics.BiometricManager.Authenticators.DEVICE_CREDENTIAL);
+            else b.setDeviceCredentialAllowed(true);
+            android.hardware.biometrics.BiometricPrompt bp = b.build();
+            bp.authenticate(new android.os.CancellationSignal(), getMainExecutor(),
+                new android.hardware.biometrics.BiometricPrompt.AuthenticationCallback() {
+                    @Override public void onAuthenticationSucceeded(android.hardware.biometrics.BiometricPrompt.AuthenticationResult r) { unlocked = true; }
+                    @Override public void onAuthenticationError(int code, CharSequence msg) {
+                        if (code == android.hardware.biometrics.BiometricPrompt.BIOMETRIC_ERROR_USER_CANCELED
+                            || code == android.hardware.biometrics.BiometricPrompt.BIOMETRIC_ERROR_NEGATIVE_BUTTON
+                            || code == android.hardware.biometrics.BiometricPrompt.BIOMETRIC_ERROR_CANCELED) finish();
+                    }
+                });
+        } catch (Throwable e) { unlocked = true; }
+    }
+
     private void showMenu(View anchor) {
         boolean bm = cur != null && Store.isBookmarked(sp, cur.url);
         android.widget.ScrollView sv = new android.widget.ScrollView(this);
@@ -2462,6 +2607,8 @@ public class MainActivity extends Activity {
         sp.edit().putString("tabs", saved.toString()).apply();
         /* the page is deliberately NOT paused, so audio keeps playing in the background */
         setBg(true);
+        // re-lock when the app goes to background (but not when a Custom Tab sign-in is in progress)
+        if (sp.getBoolean("applock", false) && System.currentTimeMillis() - lastCustomTab > 5000) unlocked = false;
     }
 
     @Override protected void onResume() {
@@ -2480,6 +2627,7 @@ public class MainActivity extends Activity {
         }
         Updater.resume(this);
         Updater.check(this, false);
+        appLockGate();
     }
 
     private void setBg(boolean on) {

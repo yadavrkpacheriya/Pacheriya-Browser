@@ -48,7 +48,7 @@ function library(){$('#bar').style.display='none';var l=LS('lib',[]),v=$('#v');v
 function detail(id){$('#bar').style.display='none';msg('Loading...');
 api('/manga/'+id+'?includes%5B%5D=cover_art',function(j){if(!j||!j.data)return msg('Could not load this title.');var m=j.data,v=$('#v'),inLib=LS('lib',[]).some(function(x){return x.id==id}),d=m.attributes.description||{};
 v.innerHTML='<div class="det"><img id="dc"><b></b><p></p><button class="b" id="al"></button></div><div style="clear:both"></div><h2>Chapters ('+lang+')</h2><div id="cl"><div class="msg">Loading chapters...</div></div>';
-v.querySelector('b').textContent=ttl(m);v.querySelector('p').textContent=d.en||d[Object.keys(d)[0]]||'';
+v.querySelector('b').textContent=ttl(m);v.querySelector('p').textContent=d.en||d[Object.keys(d)[0]]||'';mhist(ttl(m));
 ld($('#dc'),cover(m).replace('.256.','.512.'));var al=$('#al');al.textContent=inLib?'Remove from library':'Add to library';al.onclick=function(){var l=LS('lib',[]);if(l.some(function(x){return x.id==id}))l=l.filter(function(x){return x.id!=id});else l.push({id:id,t:ttl(m),c:cover(m)});SV('lib',l);detail(id)};
 var all=[],get=function(off){api('/manga/'+id+'/feed?limit=500&offset='+off+'&order%5Bchapter%5D=asc&includeExternalUrl=0&'+A('translatedLanguage',[lang])+'&'+A('contentRating',RT),function(c){if(!c||!c.data)return $('#cl').innerHTML='<div class="msg">No chapters in this language. Try another language above.</div>';all=all.concat(c.data);if(all.length<c.total&&c.data.length)return get(off+500);
 var cl=$('#cl'),done=LS('done',{});cl.innerHTML='';all=all.filter(function(x){return !x.attributes.externalUrl&&x.attributes.pages>0});if(!all.length)return cl.innerHTML='<div class="msg">No readable chapters in this language.</div>';
@@ -68,7 +68,8 @@ $('#pv').onclick=function(){var i=k();if(i>0)location.replace('#r/'+RD.ids[i-1]+
 RD.el.onclick=function(){RD.bars=!RD.bars;ui(RD.bars);chrome(!RD.bars)};
 ui(false);chrome(true);addCh(ch,true)}
 window.addEventListener('scroll',function(){if(!RD||RD.busy||RD.end)return;if(window.innerHeight+window.scrollY>document.documentElement.scrollHeight-7000){var i=RD.ids.indexOf(RD.last);if(i>=0&&i<RD.ids.length-1)addCh(RD.ids[i+1],false);else if(!RD.end){RD.end=true;var s=document.createElement('div');s.className='msg';s.textContent='End of the available chapters.';RD.el.appendChild(s)}}},{passive:true});
-function route(){var h=location.hash.slice(1),p=h.split('/');if(p[0]!='r'){RD=null;ui(true)}if(p[0]=='m')detail(p[1]);else if(p[0]=='r')read(p[1],p[2]);else if(p[0]=='l')library();else if(p[0]=='s')browse(decodeURIComponent(p.slice(1).join('/')));else browse('')}
+function mhist(label){try{VPApp.histAdd('Manga: '+label, location.href)}catch(e){}}
+function route(){var h=location.hash.slice(1),p=h.split('/');if(p[0]!='r'){RD=null;ui(true)}if(p[0]=='m')detail(p[1]);else if(p[0]=='r')read(p[1],p[2]);else if(p[0]=='l')library();else if(p[0]=='s'){var q=decodeURIComponent(p.slice(1).join('/'));mhist('search “'+q+'”');browse(q)}else browse('')}
 $('#sf').onsubmit=function(e){e.preventDefault();var q=$('#q').value.trim();location.hash=q?'#s/'+encodeURIComponent(q):'';if(!q)route();return false};
 try{if(VPApp.pic()&&window.__vpPic)__vpPic.start()}catch(e){}window.addEventListener('hashchange',route);chips();if(!LS('gateSeen',false)){SV('gateSeen',true);$('#gate').style.display='block'}route();
 </script></body></html>

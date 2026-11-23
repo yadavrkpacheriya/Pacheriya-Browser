@@ -399,17 +399,19 @@ public class MainActivity extends Activity {
             public void onClick(View v) { goBack(); }
         });
 
-        urlBox = new EditText(this);
+        urlBox = new android.widget.AutoCompleteTextView(this);
         urlBox.setSingleLine(true);
         urlBox.setTextColor(Color.WHITE);
         urlBox.setHintTextColor(0xFF888888);
         urlBox.setHint("Search or type address");
         urlBox.setTextSize(15);
         urlBox.setSelectAllOnFocus(true);
-        urlBox.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        // URI input type disables suggestions; use plain text + no-suggestions flag so the custom dropdown works and the keyboard still behaves.
+        urlBox.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
         urlBox.setImeOptions(EditorInfo.IME_ACTION_GO);
         urlBox.setBackground(null);
         urlBox.setPadding(dp(6), dp(8), dp(10), dp(8));
+        setupUrlSuggestions();
         urlBox.setOnEditorActionListener(new TextView.OnEditorActionListener() {
             public boolean onEditorAction(TextView v, int actionId, android.view.KeyEvent e) {
                 go(urlBox.getText().toString());
@@ -635,7 +637,7 @@ public class MainActivity extends Activity {
         }
         if (t.swipe.getParent() != null) ((ViewGroup) t.swipe.getParent()).removeView(t.swipe);
         content.addView(t.swipe, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        urlBox.setText(t.url.startsWith("file:") ? "" : t.url);
+        ((android.widget.AutoCompleteTextView) urlBox).setText(t.url.startsWith("file:") ? "" : t.url, false);
         setLock(t.url);
         bar.setBackgroundColor(t.incognito ? 0xFF241A33 : 0xFF15151A);
         tabBtn.setText(String.valueOf(tabs.size()));
@@ -933,7 +935,7 @@ public class MainActivity extends Activity {
                 t.media.clear();
                 t.entries.clear(); t.covered.clear(); t.gen++; t.pending = 0; t.panelOpen = false; t.autoShown = false;
                 if (t == cur) {
-                    urlBox.setText(u.startsWith("file:") ? "" : u);
+                    ((android.widget.AutoCompleteTextView) urlBox).setText(u.startsWith("file:") ? "" : u, false);
                     setLock(u);
                     refreshBadge();
                 }
@@ -982,7 +984,7 @@ public class MainActivity extends Activity {
             @Override public void doUpdateVisitedHistory(WebView v, String u, boolean isReload) {
                 t.url = u;
                 if (!t.incognito && u != null && u.startsWith("http")) Store.addHistory(sp, v.getTitle(), u);
-                if (t == cur) { urlBox.setText(u.startsWith("file:") ? "" : u); setLock(u); }
+                if (t == cur) { ((android.widget.AutoCompleteTextView) urlBox).setText(u.startsWith("file:") ? "" : u, false); setLock(u); }
             }
         });
 
@@ -2257,6 +2259,75 @@ public class MainActivity extends Activity {
         b.setLayoutParams(lp);
         if (enabled) b.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { pop.dismiss(); act.run(); } });
         return b;
+    }
+
+    /** Address-bar autocomplete from history + bookmarks; tapping a suggestion loads it. */
+    private void setupUrlSuggestions() {
+        final android.widget.AutoCompleteTextView ac = (android.widget.AutoCompleteTextView) urlBox;
+        final java.util.List<String[]> pool = new java.util.ArrayList<>(); // [display, url]
+        final android.widget.ArrayAdapter<String[]> ad = new android.widget.ArrayAdapter<String[]>(this, 0) {
+            android.widget.Filter f;
+            @Override public int getCount() { return shown.size(); }
+            @Override public String[] getItem(int i) { return shown.get(i); }
+            java.util.List<String[]> shown = new java.util.ArrayList<>();
+            @Override public View getView(int i, View cv, ViewGroup p) {
+                LinearLayout row = new LinearLayout(MainActivity.this); row.setOrientation(LinearLayout.VERTICAL);
+                row.setPadding(dp(14), dp(9), dp(14), dp(9)); row.setBackgroundColor(0xFF1C1C24);
+                String[] it = shown.get(i);
+                TextView a = new TextView(MainActivity.this); a.setText(it[0]); a.setTextColor(Color.WHITE); a.setTextSize(14); a.setSingleLine(true); a.setEllipsize(android.text.TextUtils.TruncateAt.END);
+                TextView b = new TextView(MainActivity.this); b.setText(it[1]); b.setTextColor(0xFF8A8A96); b.setTextSize(12); b.setSingleLine(true); b.setEllipsize(android.text.TextUtils.TruncateAt.END);
+                row.addView(a); row.addView(b); return row;
+            }
+            @Override public android.widget.Filter getFilter() {
+                if (f == null) f = new android.widget.Filter() {
+                    @Override protected FilterResults performFiltering(CharSequence cs) {
+                        java.util.List<String[]> out = new java.util.ArrayList<>();
+                        String q = cs == null ? "" : cs.toString().trim().toLowerCase();
+                        if (!q.isEmpty()) {
+                            java.util.Set<String> seen = new java.util.HashSet<>();
+                            for (String[] e : pool) {
+                                if (out.size() >= 8) break;
+                                if ((e[0].toLowerCase().contains(q) || e[1].toLowerCase().contains(q)) && seen.add(e[1])) out.add(e);
+                            }
+                            // offer a web-search suggestion as the last row
+                            out.add(new String[]{"Search “" + cs + "”", "__search__:" + cs});
+                        }
+                        FilterResults r = new FilterResults(); r.values = out; r.count = out.size(); return r;
+                    }
+                    @Override protected void publishResults(CharSequence cs, FilterResults r) {
+                        shown = (java.util.List<String[]>) (r.values == null ? new java.util.ArrayList<>() : r.values);
+                        notifyDataSetChanged();
+                    }
+                };
+                return f;
+            }
+        };
+        ac.setThreshold(1);
+        ac.setAdapter(ad);
+        ac.setDropDownBackgroundDrawable(new ColorDrawable(0xFF1C1C24));
+        ac.setOnItemClickListener(new android.widget.AdapterView.OnItemClickListener() {
+            public void onItemClick(android.widget.AdapterView<?> parent, View v, int pos, long id) {
+                String[] it = ad.getItem(pos);
+                String u = it[1];
+                if (u.startsWith("__search__:")) go(u.substring(11)); else go(u);
+                InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+                imm.hideSoftInputFromWindow(urlBox.getWindowToken(), 0);
+                urlBox.clearFocus();
+            }
+        });
+        // (re)load the suggestion pool from history + bookmarks whenever the box gains focus
+        ac.setOnFocusChangeListener(new View.OnFocusChangeListener() {
+            public void onFocusChange(View v, boolean has) {
+                if (!has) return;
+                pool.clear();
+                try {
+                    org.json.JSONArray bm = Store.get(sp, "bm");
+                    for (int i = 0; i < bm.length(); i++) { org.json.JSONObject o = bm.optJSONObject(i); if (o != null) pool.add(new String[]{"★ " + o.optString("t", o.optString("u")), o.optString("u")}); }
+                    org.json.JSONArray h = Store.get(sp, "hist");
+                    for (int i = h.length() - 1; i >= 0 && pool.size() < 400; i--) { org.json.JSONObject o = h.optJSONObject(i); if (o != null) pool.add(new String[]{o.optString("t", o.optString("u")), o.optString("u")}); }
+                } catch (Throwable e) { /* ignore */ }
+            }
+        });
     }
 
     /** Address-bar lock indicator: 🔒 for https, ⚠ for plain http, 🏠 for the home/file pages. */

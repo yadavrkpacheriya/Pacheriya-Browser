@@ -228,7 +228,7 @@ public class MainActivity extends Activity {
     private boolean autoPrev = true;
     private String readerJs = "";
     private String autoTr = "";
-    private String injected = "", defaultUa = "", desktopUa = "", UA_EDGE = "", UA_IE = "", UA_FF = "";
+    private String injected = "", defaultUa = "", desktopUa = "", UA_EDGE = "", UA_IE = "", UA_FF = "", authUa = "";
     private androidx.webkit.WebViewAssetLoader assetLoader;
     private final java.util.Map<String,String> pdfProxy = new java.util.concurrent.ConcurrentHashMap<String,String>();
     private int uaMode = 0; // 0 default,1 desktop chrome,2 edge,3 IE11,4 firefox
@@ -322,6 +322,8 @@ public class MainActivity extends Activity {
         java.util.regex.Matcher cm = Pattern.compile("Chrome/([\\d.]+)").matcher(ua);
         String cv = cm.find() ? cm.group(1) : "120.0.0.0";
         desktopUa = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/" + cv + " Safari/537.36";
+        // Clean mobile-Chrome UA (no "wv", real Pixel) used ONLY on sign-in hosts so Google/MS accept the in-app WebView.
+        authUa = "Mozilla/5.0 (Linux; Android 14; Pixel 8a) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/" + cv + " Mobile Safari/537.36";
         UA_EDGE = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/" + cv + " Safari/537.36 Edg/" + cv;
         UA_IE = "Mozilla/5.0 (Windows NT 10.0; WOW64; Trident/7.0; rv:11.0) like Gecko";
         UA_FF = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0";
@@ -848,11 +850,9 @@ public class MainActivity extends Activity {
 
             @Override public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest r) {
                 String sc = r.getUrl().getScheme();
-                // Google/Microsoft/Apple block sign-in inside WebViews ("browser not secure" / silent no-redirect).
-                // Open these auth pages in a real Chrome Custom Tab so login completes, then control returns to the app.
-                if (r.isForMainFrame() && "https".equals(sc) && isAuthUrl(r.getUrl().getHost(), r.getUrl().toString())) {
-                    if (openInCustomTab(r.getUrl().toString())) return true;
-                }
+                // Google/Microsoft/Apple block sign-in inside WebViews. Primary fix: present a clean Chrome UA on the auth
+                // host so the in-app WebView is accepted (no other browser needed). We let the navigation proceed here;
+                // the UA swap happens in onPageStarted. Custom Tab is only a manual fallback (menu) if a site still refuses.
                 // Redirect guard: block a main-frame jump to a different site that wasn't driven by a real, recent tap
                 // (idle redirects, refresh redirects, tap-hijack pop-unders). Only when the blocker is on.
                 if (adblock && r.isForMainFrame() && ("http".equals(sc) || "https".equals(sc))) {
@@ -892,6 +892,12 @@ public class MainActivity extends Activity {
             @Override public void onPageStarted(WebView v, String u, Bitmap f) {
                 t.url = u;
                 t.loadStart = System.currentTimeMillis();
+                // Present a clean Chrome UA on sign-in hosts so Google/Microsoft accept the in-app WebView (no other browser needed).
+                try {
+                    String h0 = Uri.parse(u).getHost();
+                    String want = (h0 != null && isAuthHost(h0.toLowerCase())) ? authUa : uaFor(t.uaMode >= 0 ? t.uaMode : uaMode);
+                    if (!want.equals(v.getSettings().getUserAgentString())) v.getSettings().setUserAgentString(want);
+                } catch (Throwable ig) {}
                 // A pop-under tab whose first page is an ad / throwaway host: close it on sight.
                 if (adblock && t.opened && t.firstNav && u != null && u.startsWith("http") && (AdBlock.blocked(u) || AdBlock.sketchyHost(u))) {
                     final Tab dead = t;
@@ -1404,20 +1410,13 @@ public class MainActivity extends Activity {
     }
 
     private long lastCustomTab = 0;
-    /** True only for identity-provider sign-in pages that refuse to work inside a WebView. */
-    private boolean isAuthUrl(String host, String url) {
+    /** Identity-provider sign-in hosts that block the default WebView UA. */
+    private boolean isAuthHost(String host) {
         if (host == null) return false;
-        host = host.toLowerCase();
-        boolean idpHost =
-            host.equals("accounts.google.com") ||
-            host.equals("accounts.youtube.com") ||
+        return host.equals("accounts.google.com") || host.equals("accounts.youtube.com") || host.endsWith(".google.com") && host.startsWith("accounts") ||
             host.equals("login.microsoftonline.com") || host.equals("login.live.com") || host.equals("login.microsoft.com") ||
-            host.equals("appleid.apple.com") ||
-            host.endsWith(".okta.com") || host.equals("accounts.spotify.com");
-        if (!idpHost) return false;
-        // Only divert real sign-in / oauth flows, not e.g. account settings the user already reached.
-        String u = url.toLowerCase();
-        return u.contains("signin") || u.contains("oauth") || u.contains("/o/") || u.contains("login") || u.contains("authorize") || u.contains("auth?") || u.contains("servicelogin") || u.contains("accountchooser");
+            host.equals("appleid.apple.com") || host.endsWith(".okta.com") || host.equals("accounts.spotify.com") ||
+            host.equals("www.facebook.com") && false; // fb works in-webview; left for clarity
     }
     /** Open a URL in a Chrome Custom Tab (a real Chrome surface) so provider sign-in works; returns false if it can't. */
     private boolean openInCustomTab(String url) {

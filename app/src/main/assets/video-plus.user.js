@@ -60,10 +60,60 @@
     ast.textContent = 'ins.adsbygoogle,[class~="adsbygoogle"],[id^="google_ads"],iframe[src*="doubleclick"],iframe[src*="googlesyndication"],iframe[src*="exoclick"],iframe[src*="juicyads"],iframe[src*="trafficjunky"],iframe[src*="adsterra"],iframe[src*="popads"],[class~="ad-banner"],[class~="ads-container"],[class*="adsbox"],[class*="ad-slot"],[class*="ad-container"],[class*="ad-wrapper"],[class*="advertisement"],[id*="ad-slot"],[id*="ad-container"],[data-ad],[data-ad-slot],.google-auto-placed,.adsbygoogle-noablate{display:none!important;height:0!important;min-height:0!important}';
     document.documentElement.appendChild(ast);
 
-    /* ---- redirect guard (page side): stop tap-hijack and idle/timer redirects ---- */
+    /* ---- collapse leftover ad "black boxes": empty reserved ad slots and ad iframes ---- */
+    function killAdBoxes() {
+      try {
+        // iframes whose src is an ad host, or that sit in an ad-ish container
+        [].forEach.call(document.querySelectorAll('iframe'), function (f) {
+          var s = f.getAttribute('src') || '';
+          if (bad(s) || sketchy(s) || /ad|banner|sponsor|promo/i.test((f.id || '') + ' ' + (f.className || '') + ' ' + (f.name || ''))) { collapse(f); }
+        });
+        // reserved empty boxes sized like ad units with no real content
+        [].forEach.call(document.querySelectorAll('div,ins,aside,section'), function (d) {
+          if (d.__vpkept) return;
+          var cls = ((d.id || '') + ' ' + (d.className || '')).toLowerCase();
+          if (/(^|[\s_-])ad(s|vert|box|slot|unit|frame|zone|banner)?([\s_-]|$)|sponsor|googlead|adsbygoogle/.test(cls)) {
+            var r = d.getBoundingClientRect();
+            var hasText = (d.innerText || '').trim().length > 20;
+            var hasMedia = d.querySelector('img,video,canvas');
+            if (!hasText && (!hasMedia || /googlesyndication|doubleclick/.test(d.innerHTML))) collapse(d);
+          }
+        });
+        // "Problematic ad? / Become a contributor / disable ad blocker" notices
+        [].forEach.call(document.querySelectorAll('div,p,span,a'), function (d) {
+          var t = (d.innerText || '').trim();
+          if (t && t.length < 120 && /problematic ad|become a contributor|disable your ad|report it here|you can disable popup/i.test(t)) {
+            var box = d.closest('div,section,aside') || d; if ((box.innerText || '').length < 220) collapse(box);
+          }
+        });
+      } catch (e) {}
+    }
+    function collapse(el) { try { el.style.setProperty('display', 'none', 'important'); el.style.setProperty('height', '0', 'important'); } catch (e) {} }
+    killAdBoxes();
+    try { new MutationObserver(function () { killAdBoxes(); }).observe(document.documentElement, { childList: true, subtree: true }); } catch (e) {}
+    setInterval(killAdBoxes, 2000);
+
+    /* ---- redirect guard (page side): stop tap-hijack and idle/timer redirects ----
+       Key idea: a tap only counts as real navigation INTENT if it lands on a genuine interactive element
+       (a link, button or form control). A tap on empty space or an ad overlay must NOT authorize a redirect. */
     var lastReal = 0;
-    ['pointerdown', 'touchstart', 'mousedown', 'keydown'].forEach(function (ev) {
-      document.addEventListener(ev, function () { lastReal = Date.now(); }, true);
+    function realIntent(t) {
+      try {
+        if (!t || !t.closest) return false;
+        var el = t.closest('a[href],button,[role=button],input,select,textarea,[onclick],[tabindex]');
+        if (!el) return false;
+        // ignore an element that covers most of the screen (classic full-page ad overlay)
+        var r = el.getBoundingClientRect();
+        if (r.width > innerWidth * 0.9 && r.height > innerHeight * 0.7) return false;
+        // ignore links pointing off-site to an ad/sketchy host
+        if (el.tagName === 'A' && el.href && (bad(el.href) || sketchy(el.href))) return false;
+        return true;
+      } catch (e) { return false; }
+    }
+    ['pointerdown', 'touchstart', 'mousedown', 'click', 'keydown'].forEach(function (ev) {
+      document.addEventListener(ev, function (e) {
+        if (ev === 'keydown' || realIntent(e.target)) { lastReal = Date.now(); try { VPApp.realTap && VPApp.realTap(); } catch (x) {} }
+      }, true);
     });
     function sameSite(u) { try { var h = new URL(u, location.href).hostname, p = location.hostname; return h === p || h.slice(-p.length - 1) === '.' + p || p.slice(-h.length - 1) === '.' + h; } catch (e) { return true; } }
     // block scripted navigations to another site that weren't triggered by a genuine tap in the last ~1.2s

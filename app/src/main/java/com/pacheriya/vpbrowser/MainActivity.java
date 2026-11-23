@@ -98,7 +98,8 @@ public class MainActivity extends Activity {
         final java.util.HashSet<String> covered = new java.util.HashSet<String>();
         int gen, pending, uaMode = -1; // -1 = follow global
         long loadStart;
-        long lastTap;     // when the user last physically touched this page
+        long lastTap;     // when the user last physically touched this page (any touch)
+        long lastRealTap; // when the user last tapped a GENUINE link/button (set by the page script) — authorizes a redirect
         String pageHost;  // host of the page the user actually navigated to
         boolean opened;   // this tab was opened by a page (window.open), not by the user
         boolean firstNav = true; // still waiting for this tab's first navigation
@@ -877,7 +878,7 @@ public class MainActivity extends Activity {
                             ui.post(new Runnable() { public void run() { closeTab(dead); toast("Blocked a pop-up ad"); } });
                             return true;
                         }
-                        long since = System.currentTimeMillis() - t.lastTap;
+                        long since = System.currentTimeMillis() - t.lastRealTap;
                         boolean recentTap = since >= 0 && since < 1200;
                         boolean crossSite = t.pageHost != null && dest != null && !reg(dest).equals(reg(t.pageHost));
                         if ((adHost || sketchy || crossSite) && !recentTap && t.pageHost != null) {
@@ -1017,7 +1018,7 @@ public class MainActivity extends Activity {
                 if (adblock) {
                     // Pop-under / new-tab ad: a hijacked tap still reports a "gesture", so also require that the user
                     // really touched THIS page in the last ~1.2s AND that the opener wasn't itself an ad frame.
-                    long since = System.currentTimeMillis() - t.lastTap;
+                    long since = System.currentTimeMillis() - t.lastRealTap;
                     boolean recentTap = since >= 0 && since < 1200;
                     if (!isUserGesture || !recentTap) { Diag.bump("popups_blocked"); return false; }
                     // Peek at the href the popup is trying to open; block if it's a known ad host or a throwaway popunder TLD.
@@ -1812,6 +1813,9 @@ public class MainActivity extends Activity {
         }
 
         /** Durable key/value store for the app's own asset pages (home site list, manga filters), kept in app prefs so updates never wipe it. */
+        /** The page script calls this only when the user taps a real link/button — authorizes a cross-site navigation. */
+        @JavascriptInterface public void realTap() { t.lastRealTap = System.currentTimeMillis(); }
+
         @JavascriptInterface public String prefGet(String key) {
             if (t.url == null || !t.url.startsWith("file:///android_asset/")) return "";
             return sp.getString("kv_" + key, "");

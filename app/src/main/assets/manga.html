@@ -8,8 +8,11 @@
 select{background:#22222c;color:#fff;border:0;border-radius:14px;padding:6px 8px;font-size:12px}
 .filtrow{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
 .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;padding:10px}
-.card{background:#17171e;border-radius:10px;overflow:hidden}.card img{width:100%;aspect-ratio:2/3;object-fit:cover;display:block;background:#222}
-.card div{padding:7px 8px;font-size:13px;line-height:1.3;max-height:3.6em;overflow:hidden}
+.card{background:#17171e;border-radius:10px;overflow:hidden;position:relative}.card img{width:100%;aspect-ratio:2/3;object-fit:cover;display:block;background:#222}
+.card .tt{padding:7px 8px 2px;font-size:13px;line-height:1.3;max-height:3.6em;overflow:hidden}
+.card .meta{padding:0 8px 7px;font-size:11px;color:#9aa;display:flex;gap:6px;flex-wrap:wrap}
+.card .badge{position:absolute;top:6px;left:6px;font-size:10px;font-weight:700;padding:2px 6px;border-radius:6px;color:#111}
+.badge.done{background:#4caf50}.badge.ongoing{background:#E2B33C}.badge.hiatus{background:#9aa}.badge.cancelled{background:#e05555;color:#fff}
 h2{font-size:15px;margin:14px 12px 4px;color:#E2B33C}
 .det{padding:12px}.det img{width:120px;float:left;margin:0 12px 8px 0;border-radius:8px}.det p{font-size:13.5px;color:#bbb;line-height:1.5}
 .ch{display:flex;justify-content:space-between;padding:13px 12px;border-bottom:1px solid #1d1d25;font-size:14px}.ch.done{color:#667}
@@ -31,7 +34,7 @@ function api(p,cb){var id=++nn;cbs[id]=function(ok,t){if(!ok)return cb(null);try
 var RT=['safe','suggestive','erotica','pornographic'],RN={safe:'Safe',suggestive:'Suggestive',erotica:'Erotica 18+',pornographic:'Adult 18+'};
 var rat=LS('rat',['safe','suggestive']),lang=LS('lang','en'),saver=LS('saver',false),LGS=['en','hi','ja','ko','zh','es','fr','pt-br','ru','id','ar'];
 var sortBy=LS('sortBy','follow'),genre=LS('genre',''),status=LS('status','');
-var SORTS={follow:'Popular',rating:'Top rated',latest:'Latest update',created:'Newest',relevance:'Relevance'};
+var SORTS={follow:'Popular',rating:'Top rated',latest:'Latest update',created:'Newest',title:'Title A-Z',relevance:'Relevance'};
 /* MangaDex genre tag ids (common ones) */
 var GENRES={'':'All genres',Action:'391b0423-d847-456f-aff0-8b0cfc03066b',Adventure:'87cc87cd-a395-47af-b27a-93258283bbc6',Comedy:'4d32cc48-9f00-4cca-9b5a-a839f0764984',Drama:'b9af3a63-f058-46de-a9a0-e0c13906197a',Fantasy:'cdc58593-87dd-415e-bbc0-2ec27bf404cc',Horror:'cdad7e68-1419-41dd-bdce-27753074a640',Isekai:'ace04997-f6bd-436e-b261-779182193d3d',Romance:'423e2eae-a7a2-4a8b-ac03-a8351462d71d','Sci-Fi':'256c8bd9-4904-4360-bf4f-508a76d67183','Slice of Life':'e5301a23-ebd9-49dd-a0cb-2add944c7fe9',Sports:'69964a64-2f90-4d33-beeb-f3ed2875eb4c',Thriller:'07251805-a27e-4d59-b488-f0bfbec15168',Mystery:'ee968100-4191-4968-93d3-f82d72be7e46',Ecchi:'f5ba408b-0e7a-484d-8d49-4e9125ac96de'};
 var STATS={'':'Any status',ongoing:'Ongoing',completed:'Completed',hiatus:'Hiatus',cancelled:'Cancelled'};
@@ -54,12 +57,23 @@ $('#g18').onclick=function(){SV('age18',true);if(rat.indexOf('erotica')<0)rat.pu
 $('#gsafe').onclick=function(){$('#gate').style.display='none'};
 function ttl(m){var t=m.attributes.title,k=Object.keys(t);return t.en||t[k[0]]||'Untitled'}
 function cover(m){var c=(m.relationships||[]).filter(function(r){return r.type=='cover_art'})[0];return c&&c.attributes?'https://uploads.mangadex.org/covers/'+m.id+'/'+c.attributes.fileName+'.256.jpg':''}
-function grid(list,el){var g=document.createElement('div');g.className='grid';list.forEach(function(m){var c=document.createElement('div');c.className='card';c.innerHTML='<img loading="lazy"><div></div>';ld(c.firstChild,m.cv||cover(m));c.lastChild.textContent=m.tt||ttl(m);c.onclick=function(){location.hash='#m/'+m.id};g.appendChild(c)});el.appendChild(g)}
+function relTime(iso){try{var d=(Date.now()-new Date(iso).getTime())/86400000;if(d<1)return'today';if(d<2)return'1d ago';if(d<30)return Math.floor(d)+'d ago';if(d<365)return Math.floor(d/30)+'mo ago';return Math.floor(d/365)+'y ago'}catch(e){return''}}
+var STLABEL={completed:['done','✓ Completed'],ongoing:['ongoing','● Ongoing'],hiatus:['hiatus','⏸ Hiatus'],cancelled:['cancelled','✕ Cancelled']};
+function grid(list,el){var g=document.createElement('div');g.className='grid';list.forEach(function(m){
+ var a=m.attributes||{};var st=a.status||'';var lastCh=a.lastChapter||'';var upd=(m.cv?'':'' );
+ var updIso='';try{updIso=a.updatedAt||a.latestUploadedChapter||''}catch(e){}
+ var c=document.createElement('div');c.className='card';
+ var badge=STLABEL[st]?'<span class="badge '+STLABEL[st][0]+'">'+STLABEL[st][1]+'</span>':'';
+ var meta=[];if(lastCh)meta.push('Ch '+lastCh);if(updIso&&relTime(updIso))meta.push(relTime(updIso));
+ c.innerHTML=badge+'<img loading="lazy"><div class="tt"></div>'+(meta.length?'<div class="meta">'+meta.map(function(x){return '<span>'+x+'</span>'}).join('')+'</div>':'');
+ ld(c.querySelector('img'),m.cv||cover(m));c.querySelector('.tt').textContent=m.tt||ttl(m);
+ c.onclick=function(){location.hash='#m/'+m.id};g.appendChild(c)});el.appendChild(g)}
 function msg(t){$('#v').innerHTML='<div class="msg">'+t+'</div>'}
 function orderParam(q){
- var map={follow:'followedCount',rating:'rating',latest:'latestUploadedChapter',created:'createdAt',relevance:'relevance'};
+ var map={follow:'followedCount',rating:'rating',latest:'latestUploadedChapter',created:'createdAt',title:'title',relevance:'relevance'};
  var key=q?'relevance':(sortBy==='relevance'?'followedCount':sortBy);
- return 'order%5B'+map[key]+'%5D=desc';
+ var dir=(key==='title')?'asc':'desc';
+ return 'order%5B'+map[key]+'%5D='+dir;
 }
 function browse(q){$('#bar').style.display='none';msg('Loading...');
 var p='/manga?limit=48&includes%5B%5D=cover_art&'+A('contentRating',rat)+'&'+A('availableTranslatedLanguage',[lang])+'&'+orderParam(q);

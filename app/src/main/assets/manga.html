@@ -64,8 +64,13 @@ function grid(list,el){var g=document.createElement('div');g.className='grid';li
  var updIso='';try{updIso=a.updatedAt||a.latestUploadedChapter||''}catch(e){}
  var c=document.createElement('div');c.className='card';
  var badge=STLABEL[st]?'<span class="badge '+STLABEL[st][0]+'">'+STLABEL[st][1]+'</span>':'';
- var meta=[];if(lastCh)meta.push('Ch '+lastCh);if(updIso&&relTime(updIso))meta.push(relTime(updIso));
- c.innerHTML=badge+'<img loading="lazy"><div class="tt"></div>'+(meta.length?'<div class="meta">'+meta.map(function(x){return '<span>'+x+'</span>'}).join('')+'</div>':'');
+ /* reading progress for this title */
+ var pr=(LS('prog',{}))[m.id];var progHtml='';var newBadge='';
+ if(pr&&pr.t){var pct=Math.round((pr.r||0)*100/pr.t);progHtml='<div style="height:5px;background:#2a2a33"><div style="height:100%;width:'+pct+'%;background:#E2B33C"></div></div>';
+  if(pr.r>0&&pr.r<pr.t)newBadge='<span class="badge ongoing" style="left:auto;right:6px;top:6px">NEW</span>';
+  else if(pr.r>=pr.t&&pr.r>0)newBadge='<span class="badge done" style="left:auto;right:6px;top:6px">✓</span>';}
+ var meta=[];if(pr&&pr.t)meta.push('Read '+(pr.r||0)+'/'+pr.t);else if(lastCh)meta.push('Ch '+lastCh);if(updIso&&relTime(updIso))meta.push(relTime(updIso));
+ c.innerHTML=badge+newBadge+'<img loading="lazy">'+progHtml+'<div class="tt"></div>'+(meta.length?'<div class="meta">'+meta.map(function(x){return '<span>'+x+'</span>'}).join('')+'</div>':'');
  ld(c.querySelector('img'),m.cv||cover(m));c.querySelector('.tt').textContent=m.tt||ttl(m);
  c.onclick=function(){location.hash='#m/'+m.id};g.appendChild(c)});el.appendChild(g)}
 function msg(t){$('#v').innerHTML='<div class="msg">'+t+'</div>'}
@@ -89,7 +94,17 @@ v.querySelector('b').textContent=ttl(m);v.querySelector('p').textContent=d.en||d
 ld($('#dc'),cover(m).replace('.256.','.512.'));var al=$('#al');al.textContent=inLib?'Remove from library':'Add to library';al.onclick=function(){var l=LS('lib',[]);if(l.some(function(x){return x.id==id}))l=l.filter(function(x){return x.id!=id});else l.push({id:id,t:ttl(m),c:cover(m)});SV('lib',l);detail(id)};
 var all=[],get=function(off){api('/manga/'+id+'/feed?limit=500&offset='+off+'&order%5Bchapter%5D=asc&includeExternalUrl=0&'+A('translatedLanguage',[lang])+'&'+A('contentRating',RT),function(c){if(!c||!c.data)return $('#cl').innerHTML='<div class="msg">No chapters in this language. Try another language above.</div>';all=all.concat(c.data);if(all.length<c.total&&c.data.length)return get(off+500);
 var cl=$('#cl'),done=LS('done',{});cl.innerHTML='';all=all.filter(function(x){return !x.attributes.externalUrl&&x.attributes.pages>0});if(!all.length)return cl.innerHTML='<div class="msg">No readable chapters in this language.</div>';
-all.forEach(function(x,i){var d=document.createElement('div');d.className='ch'+(done[x.id]?' done':'');d.innerHTML='<span></span><span></span>';d.firstChild.textContent='Ch '+(x.attributes.chapter||'?')+(x.attributes.title?' - '+x.attributes.title:'');d.lastChild.textContent=x.attributes.pages+' p';d.onclick=function(){SV('chs',all.map(function(y){return y.id}));location.hash='#r/'+x.id+'/'+id};cl.appendChild(d)})})};get(0)})}
+/* record per-manga progress: total chapters + how many are read, for progress bars and NEW badges */
+var readCount=all.filter(function(x){return done[x.id]}).length;
+var lastReadNo='';all.forEach(function(x){if(done[x.id])lastReadNo=x.attributes.chapter||lastReadNo});
+var prog=LS('prog',{});prog[id]={t:all.length,r:readCount,last:lastReadNo,ts:Date.now()};SV('prog',prog);
+/* progress summary at top of chapter list */
+var pct=all.length?Math.round(readCount*100/all.length):0;
+var ps=document.createElement('div');ps.style.cssText='margin:0 0 10px;font-size:13px;color:#ccc';
+ps.innerHTML='Read '+readCount+' / '+all.length+' chapters'+(readCount<all.length?' · <b style="color:#E2B33C">'+(all.length-readCount)+' new/unread</b>':' · <b style="color:#4caf50">all caught up</b>')+
+ '<div style="height:7px;background:#2a2a33;border-radius:4px;margin-top:6px;overflow:hidden"><div style="height:100%;width:'+pct+'%;background:#E2B33C"></div></div>';
+cl.appendChild(ps);
+all.forEach(function(x,i){var d=document.createElement('div');d.className='ch'+(done[x.id]?' done':'');d.innerHTML='<span></span><span></span>';d.firstChild.textContent='Ch '+(x.attributes.chapter||'?')+(x.attributes.title?' - '+x.attributes.title:'');d.lastChild.textContent=(done[x.id]?'✓ ':'')+x.attributes.pages+' p';d.onclick=function(){SV('chs',all.map(function(y){return y.id}));location.hash='#r/'+x.id+'/'+id};cl.appendChild(d)})})};get(0)})}
 var RD=null;
 function chrome(x){try{VPApp.chrome(x)}catch(e){}}
 function ui(show){$('.top').style.display=show?'':'none';var b=$('#bar');if(b)b.style.display=(RD&&show)?'flex':'none';if(!RD)chrome(false)}
@@ -97,7 +112,10 @@ function addCh(ch,first){if(!RD||RD.busy)return;RD.busy=true;api('/at-home/serve
 var d=saver?j.chapter.dataSaver:j.chapter.data,fd=saver?'data-saver':'data',rd=RD.el;
 if(!first){var s=document.createElement('div');s.className='msg';s.textContent='Next chapter';s.dataset.ch=ch;rd.appendChild(s)}
 d.forEach(function(f){var i=document.createElement('img');i.loading='lazy';i.dataset.ch=ch;ld(i,j.baseUrl+'/'+fd+'/'+j.chapter.hash+'/'+f);rd.appendChild(i)});
-RD.last=ch;var dn=LS('done',{});dn[ch]=1;SV('done',dn);if(!first){try{history.replaceState(null,'','#r/'+ch+'/'+RD.mid)}catch(e){}}})}
+RD.last=ch;var dn=LS('done',{});dn[ch]=1;SV('done',dn);
+/* bump this manga's read progress */
+try{var pr=LS('prog',{});var e=pr[RD.mid]||{t:0,r:0};var rc=(RD.ids||[]).filter(function(y){return dn[y]}).length;e.r=rc;if((RD.ids||[]).length)e.t=RD.ids.length;e.ts=Date.now();pr[RD.mid]=e;SV('prog',pr)}catch(e){}
+if(!first){try{history.replaceState(null,'','#r/'+ch+'/'+RD.mid)}catch(e){}}})}
 function read(ch,mid){msg('Loading pages...');var v=$('#v');v.innerHTML='<div class="rd"></div>';RD={el:v.firstChild,mid:mid,ids:LS('chs',[]),last:ch,busy:false,end:false,bars:false};
 window.scrollTo(0,0);var bar=$('#bar');bar.innerHTML='<button class="b" id="pv">Prev</button><button class="b" id="bk">List</button><button class="b" id="nx">Next</button>';
 function k(){return RD?RD.ids.indexOf(RD.last):-1}

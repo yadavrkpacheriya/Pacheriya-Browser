@@ -85,7 +85,36 @@ var p='/manga?limit=48&includes%5B%5D=cover_art&'+A('contentRating',rat)+'&'+A('
 if(q)p+='&title='+encodeURIComponent(q);
 if(genre)p+='&includedTags%5B%5D='+genre;
 if(status)p+='&status%5B%5D='+status;
-api(p,function(j){if(!j||!j.data)return msg('Could not load. Check the internet and try again.');var v=$('#v');v.innerHTML='';if(!j.data.length)return msg('Nothing found. Try another word, another language/genre, or turn on more content types above.');var h=document.createElement('h2');var lbl=q?'Results for "'+q+'"':(SORTS[sortBy]+(genre?' · '+Object.keys(GENRES).filter(function(k){return GENRES[k]==genre})[0]:'')+(status?' · '+STATS[status]:''));h.textContent=lbl;v.appendChild(h);grid(j.data,v)})}
+api(p,function(j){var v=$('#v');v.innerHTML='';var h=document.createElement('h2');var lbl=q?'Results for "'+q+'"':(SORTS[sortBy]+(genre?' · '+Object.keys(GENRES).filter(function(k){return GENRES[k]==genre})[0]:'')+(status?' · '+STATS[status]:''));h.textContent=lbl;v.appendChild(h);
+ if(q)v.appendChild(otherSites(q));
+ if(!j||!j.data){v.insertAdjacentHTML('beforeend','<div class="msg">Could not load MangaDex. Try the other sites above.</div>');return}
+ if(!j.data.length){v.insertAdjacentHTML('beforeend','<div class="msg">No MangaDex match. Try the other sites above, or another word/language/genre.</div>');return}
+ grid(j.data,v)})}
+/* unified search: same query across the major legal manga/manhwa readers (opens each site's own search) */
+function otherSites(q){
+ var eq=encodeURIComponent(q);
+ var SITES=[
+  ['MangaFire','https://mangafire.to/filter?keyword='+eq],
+  ['MangaReader','https://mangareader.to/search?keyword='+eq],
+  ['ComicK','https://comick.io/search?q='+eq],
+  ['WEBTOON','https://www.webtoons.com/en/search?keyword='+eq],
+  ['Bato.to','https://bato.to/search?word='+eq],
+  ['MangaPark','https://mangapark.net/search?word='+eq],
+  ['Manganato','https://manganato.com/search/story/'+eq.replace(/%20/g,'_')],
+  ['Toonily','https://toonily.com/?s='+eq],
+  ['Asura','https://asuracomic.net/series?name='+eq],
+  ['Weebcentral','https://weebcentral.com/search?text='+eq]
+ ];
+ var wrap=document.createElement('div');
+ wrap.style.cssText='display:flex;gap:8px;overflow-x:auto;padding:4px 2px 12px;white-space:nowrap;-webkit-overflow-scrolling:touch';
+ var lab=document.createElement('span');lab.textContent='Search other sites: ';lab.style.cssText='color:#9aa;font-size:12px;align-self:center;flex:none';
+ wrap.appendChild(lab);
+ SITES.forEach(function(s){var b=document.createElement('a');b.textContent=s[0];b.href=s[1];
+  b.style.cssText='flex:none;background:#26262f;color:#E2B33C;border-radius:14px;padding:7px 12px;font-size:12px;text-decoration:none';
+  b.onclick=function(e){e.preventDefault();try{VPApp.histAdd('Manga search: '+q,location.href)}catch(x){}location.href=s[1]};
+  wrap.appendChild(b)});
+ return wrap;
+}
 function library(){$('#bar').style.display='none';var l=LS('lib',[]),v=$('#v');v.innerHTML='<h2>Library</h2>';if(!l.length)return v.insertAdjacentHTML('beforeend','<div class="msg">Nothing saved yet. Open a manga and tap Add to library.</div>');grid(l.map(function(x){return{id:x.id,tt:x.t,cv:x.c,attributes:{title:{en:x.t}}}}),v)}
 function detail(id){$('#bar').style.display='none';msg('Loading...');
 api('/manga/'+id+'?includes%5B%5D=cover_art',function(j){if(!j||!j.data)return msg('Could not load this title.');var m=j.data,v=$('#v'),inLib=LS('lib',[]).some(function(x){return x.id==id}),d=m.attributes.description||{};

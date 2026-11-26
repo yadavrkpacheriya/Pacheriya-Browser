@@ -637,8 +637,15 @@ public class MainActivity extends Activity {
         if (immersive) setReadMode(false); else if (bar != null && navBar != null) showChrome();
         if (t.swipe == null) {
             final Tab ft = t;
-            t.swipe = new androidx.swiperefreshlayout.widget.SwipeRefreshLayout(this);
+            t.swipe = new androidx.swiperefreshlayout.widget.SwipeRefreshLayout(this) {
+                // Only allow pull-to-refresh when the WebView is really scrolled to the very top; otherwise let it scroll.
+                @Override public boolean canChildScrollUp() {
+                    return ft.wv != null && ft.wv.getScrollY() > 2;
+                }
+            };
             t.swipe.setColorSchemeColors(0xFFE2B33C);
+            // Require a longer pull so a normal upward swipe doesn't accidentally refresh.
+            try { t.swipe.setDistanceToTriggerSync(dp(140)); } catch (Throwable e) {}
             t.swipe.setProgressBackgroundColorSchemeColor(0xFF1E1E26);
             if (t.wv.getParent() != null) ((ViewGroup) t.wv.getParent()).removeView(t.wv);
             t.swipe.addView(t.wv, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));

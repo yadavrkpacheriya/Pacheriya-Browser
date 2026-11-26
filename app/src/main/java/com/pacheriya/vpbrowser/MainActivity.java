@@ -1439,6 +1439,8 @@ public class MainActivity extends Activity {
         return host.equals("accounts.google.com") || host.equals("accounts.youtube.com") || host.endsWith(".google.com") && host.startsWith("accounts") ||
             host.equals("login.microsoftonline.com") || host.equals("login.live.com") || host.equals("login.microsoft.com") ||
             host.equals("appleid.apple.com") || host.endsWith(".okta.com") || host.equals("accounts.spotify.com") ||
+            host.equals("dash.cloudflare.com") || host.equals("login.cloudflare.com") || // Cloudflare dashboard login blocks WebViews
+            host.equals("github.com") || host.equals("gitlab.com") || host.equals("auth0.com") || host.endsWith(".auth0.com") ||
             host.equals("www.facebook.com") && false; // fb works in-webview; left for clarity
     }
     /** Open a URL in a Chrome Custom Tab (a real Chrome surface) so provider sign-in works; returns false if it can't. */

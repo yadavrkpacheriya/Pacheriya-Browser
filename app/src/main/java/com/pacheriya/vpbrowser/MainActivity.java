@@ -883,7 +883,13 @@ public class MainActivity extends Activity {
                         long since = System.currentTimeMillis() - t.lastRealTap;
                         boolean recentTap = since >= 0 && since < 1200;
                         boolean crossSite = t.pageHost != null && dest != null && !reg(dest).equals(reg(t.pageHost));
-                        if ((adHost || sketchy || crossSite) && !recentTap && t.pageHost != null) {
+                        // Allow legitimate sign-in / OAuth / SSO hops: these are cross-site redirects with no tap, but to a known
+                        // auth host (Google, Cloudflare, GitHub, Okta, Auth0...) or coming back from one. Only AD/sketchy hosts are blocked here.
+                        boolean authHop = isAuthHost(dest == null ? "" : dest.toLowerCase())
+                            || (t.pageHost != null && isAuthHost(t.pageHost.toLowerCase()))
+                            || (dest != null && (dest.endsWith(".cloudflareaccess.com") || dest.contains("oauth") || dest.contains("/sso") || dest.contains("saml")));
+                        // Block only when it's an ad/sketchy host, OR a cross-site jump that is NOT a login hop and had no real tap.
+                        if ((adHost || sketchy || (crossSite && !authHop)) && !recentTap && t.pageHost != null) {
                             Diag.bump("redirects_blocked");
                             final String blocked = dest;
                             ui.post(new Runnable() { public void run() { toast("Blocked a redirect to " + blocked); } });

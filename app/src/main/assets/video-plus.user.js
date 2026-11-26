@@ -60,6 +60,50 @@
     ast.textContent = 'ins.adsbygoogle,[class~="adsbygoogle"],[id^="google_ads"],iframe[src*="doubleclick"],iframe[src*="googlesyndication"],iframe[src*="exoclick"],iframe[src*="juicyads"],iframe[src*="trafficjunky"],iframe[src*="adsterra"],iframe[src*="popads"],[class~="ad-banner"],[class~="ads-container"],[class*="adsbox"],[class*="ad-slot"],[class*="ad-container"],[class*="ad-wrapper"],[class*="advertisement"],[id*="ad-slot"],[id*="ad-container"],[data-ad],[data-ad-slot],.google-auto-placed,.adsbygoogle-noablate{display:none!important;height:0!important;min-height:0!important}';
     document.documentElement.appendChild(ast);
 
+    /* ---- autoplay + scroll-lock rescue: stop pages that freeze on an auto-playing video ---- */
+    // If a video starts playing on its own (not from a user tap) and the page has locked scrolling, pause+mute it
+    // and restore scrolling, so an autoplay takeover can't trap the page.
+    var userPlayed = 0;
+    document.addEventListener('click', function () { userPlayed = Date.now(); }, true);
+    document.addEventListener('play', function (e) {
+      try {
+        var v = e.target; if (!v || v.tagName !== 'VIDEO') return;
+        if (Date.now() - userPlayed > 1500) {          // started without a recent tap → autoplay
+          // only intervene if the page looks locked (body/html overflow hidden) — don't touch normal autoplay previews
+          var bs = getComputedStyle(document.body), hs = getComputedStyle(document.documentElement);
+          if (bs.overflow === 'hidden' || hs.overflow === 'hidden' || bs.position === 'fixed') {
+            v.muted = true; try { v.pause(); } catch (x) {}
+            unlockScroll();
+          }
+        }
+      } catch (x) {}
+    }, true);
+    function unlockScroll() {
+      try {
+        [document.body, document.documentElement].forEach(function (el) {
+          if (!el) return;
+          el.style.setProperty('overflow', 'auto', 'important');
+          el.style.setProperty('position', 'static', 'important');
+          el.style.setProperty('height', 'auto', 'important');
+          el.style.removeProperty('touch-action');
+        });
+      } catch (x) {}
+    }
+    // expose a manual rescue the app can call (long-press refresh) to force-unfreeze any stuck page
+    window.__vpUnstick = function () {
+      unlockScroll();
+      try { [].forEach.call(document.querySelectorAll('video'), function (v) { v.pause(); v.muted = true; }); } catch (x) {}
+      // remove full-viewport fixed overlays that block taps
+      try {
+        [].forEach.call(document.querySelectorAll('div,section,aside'), function (d) {
+          var s = getComputedStyle(d); var r = d.getBoundingClientRect();
+          if (s.position === 'fixed' && r.width >= innerWidth * 0.95 && r.height >= innerHeight * 0.9 && (+s.zIndex || 0) > 100) {
+            d.style.setProperty('display', 'none', 'important');
+          }
+        });
+      } catch (x) {}
+    };
+
     /* ---- collapse leftover ad "black boxes" — conservative: only clear ad units, never the page's own content ---- */
     // ad-specific class/id patterns with word boundaries (won't match "header", "loading", "download", "read", etc.)
     var AD_CLS = /(^|[\s_-])(ad|ads|adbox|ad-box|adslot|ad-slot|adunit|ad-unit|adzone|ad-zone|adframe|ad-wrapper|ad-container|advertisement|adsbygoogle|google-ad|googlead|sponsor|sponsored)($|[\s_-])/i;

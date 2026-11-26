@@ -557,6 +557,17 @@ public class MainActivity extends Activity {
                     else cur.wv.reload();
                 }
             });
+            if (nid2 == 3) { // long-press Reload = rescue a stuck/frozen page (stop autoplay, unlock scroll, kill overlays)
+                nb.setOnLongClickListener(new View.OnLongClickListener() {
+                    public boolean onLongClick(View v) {
+                        if (cur == null) return false;
+                        if (customView != null) exitFullscreen();
+                        cur.wv.evaluateJavascript("window.__vpUnstick&&window.__vpUnstick()", null);
+                        toast("Unfroze page: autoplay stopped, scrolling restored");
+                        return true;
+                    }
+                });
+            }
             navBar.addView(nb, new LinearLayout.LayoutParams(0, dp(46), 1f));
         }
         main.addView(navBar, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -1013,6 +1024,17 @@ public class MainActivity extends Activity {
                 customView = view;
                 customCb = cb;
                 fsHost.addView(view, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+                // Always-available app-level close button, so a stuck fullscreen video can never trap the user.
+                TextView fx = new TextView(MainActivity.this);
+                fx.setText("✕"); fx.setTextColor(Color.WHITE); fx.setTextSize(20);
+                fx.setGravity(Gravity.CENTER);
+                GradientDrawable fg = new GradientDrawable(); fg.setShape(GradientDrawable.OVAL); fg.setColor(0xAA000000);
+                fx.setBackground(fg);
+                FrameLayout.LayoutParams flp = new FrameLayout.LayoutParams(dp(42), dp(42));
+                flp.gravity = Gravity.TOP | Gravity.END; flp.setMargins(0, dp(14), dp(14), 0);
+                fx.setLayoutParams(flp);
+                fx.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { exitFullscreen(); } });
+                fsHost.addView(fx);
                 fsHost.setVisibility(View.VISIBLE);
                 // Follow the phone fully in fullscreen video: both landscape directions AND portrait, ignoring the rotation lock.
                 setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR);
@@ -1612,7 +1634,7 @@ public class MainActivity extends Activity {
 
     private void exitFullscreen() {
         if (customView == null) return;
-        fsHost.removeView(customView);
+        fsHost.removeAllViews();   // removes the video view and the app close button
         fsHost.setVisibility(View.GONE);
         customView = null;
         if (customCb != null) { try { customCb.onCustomViewHidden(); } catch (Exception e) { /* ignore */ } }

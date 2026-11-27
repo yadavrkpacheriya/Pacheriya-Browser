@@ -68,6 +68,13 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.APP_BROWSER"/>
             </intent-filter>
+            <!-- Accept a video (or link/text) shared from Telegram, Gallery, Instagram etc. → Find full video -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:mimeType="video/*"/>
+                <data android:mimeType="text/plain"/>
+            </intent-filter>
         </activity>
         <receiver android:name=".InstallReceiver" android:exported="false"/>
         <receiver android:name=".UpdatedReceiver" android:exported="true">

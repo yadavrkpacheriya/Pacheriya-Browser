@@ -340,7 +340,12 @@ public class MainActivity extends Activity {
         }
 
         Uri d = getIntent() != null ? getIntent().getData() : null;
-        if (d != null) newTab(d.toString());
+        String sharePayload = sharedFromIntent(getIntent());
+        if (sharePayload != null) {
+            JSONArray saved = Store.get(sp, "tabs");
+            if (saved.length() == 0) newTab(HOME); else for (int i = 0; i < saved.length(); i++) newTab(saved.optString(i));
+            ui.postDelayed(new Runnable() { public void run() { openFinderWith(sharePayload); } }, 500);
+        } else if (d != null) newTab(d.toString());
         else {
             JSONArray saved = Store.get(sp, "tabs");
             if (saved.length() == 0) newTab(HOME);
@@ -2809,8 +2814,43 @@ public class MainActivity extends Activity {
     }
 
     // ---------------- lifecycle ----------------
+    /** Returns a shared video URI string or a shared text link from a SEND intent, or null. */
+    private String sharedFromIntent(Intent i) {
+        if (i == null || !Intent.ACTION_SEND.equals(i.getAction())) return null;
+        try {
+            String type = i.getType();
+            if (type != null && type.startsWith("video/")) {
+                Uri u = (Uri) i.getParcelableExtra(Intent.EXTRA_STREAM);
+                if (u != null) return "vid:" + u.toString();
+            }
+            String txt = i.getStringExtra(Intent.EXTRA_TEXT);
+            if (txt != null) {
+                java.util.regex.Matcher m = java.util.regex.Pattern.compile("https?://\\S+").matcher(txt);
+                if (m.find()) return "lnk:" + m.group();
+            }
+        } catch (Throwable e) {}
+        return null;
+    }
+
+    /** Open the Find-full-video page seeded with a shared video or link. */
+    private void openFinderWith(String payload) {
+        if (cur == null) return;
+        String frag;
+        if (payload.startsWith("vid:")) {
+            // grant the WebView read access to the shared video and hand it the content URI
+            Uri u = Uri.parse(payload.substring(4));
+            try { grantUriPermission(getPackageName(), u, Intent.FLAG_GRANT_READ_URI_PERMISSION); } catch (Throwable e) {}
+            frag = "#vid=" + Uri.encode(u.toString());
+        } else { // link
+            frag = "#lnk=" + Uri.encode(payload.substring(4));
+        }
+        cur.wv.loadUrl("file:///android_asset/finder.html" + frag);
+    }
+
     @Override protected void onNewIntent(Intent i) {
         super.onNewIntent(i);
+        String share = sharedFromIntent(i);
+        if (share != null) { final String sp2 = share; ui.postDelayed(new Runnable() { public void run() { openFinderWith(sp2); } }, 300); return; }
         Uri d = i.getData();
         if (d != null) newTab(d.toString());
     }

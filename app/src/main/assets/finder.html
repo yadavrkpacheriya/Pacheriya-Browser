@@ -218,6 +218,14 @@ function findByLink(){
 document.getElementById('lkb').onclick=findByLink;
 document.getElementById('lk').addEventListener('keydown',function(e){if(e.key==='Enter')findByLink();});
 
+/* auto-start when a video or link was SHARED into the app (Telegram, Gallery, Instagram share → this page) */
+(function(){
+ var h=location.hash||'';
+ var mV=h.match(/[#&]vid=([^&]+)/),mL=h.match(/[#&]lnk=([^&]+)/);
+ if(mV){try{var u=decodeURIComponent(mV[1]);st.textContent='Reading the shared video…';startFromVideoUrl(u);}catch(e){}}
+ else if(mL){try{var lk=decodeURIComponent(mL[1]);document.getElementById('lk').value=lk;st.textContent='Reading the shared link…';resolveVideoUrl(lk,function(vurl){if(vurl)startFromVideoUrl(vurl);else st.innerHTML='Couldn’t read that shared link (may be private). Open the post, play it, then use “Choose the clip”.';});}catch(e){}}
+})();
+
 document.getElementById('f').onchange=function(){var f=this.files[0];if(!f)return;out.innerHTML='';frames=[];bestBlob=null;lastUrl='';st.textContent='Reading the clip…';
 nameHint(f.name);
 v.src=URL.createObjectURL(f);v.onloadedmetadata=function(){var d=isFinite(v.duration)&&v.duration>0?v.duration:10;soundCard();grab([0.1,0.25,0.4,0.55,0.7,0.85].map(function(p){return Math.max(0.1,d*p)}),0)};

@@ -1857,6 +1857,47 @@ public class MainActivity extends Activity {
             Store.addHistory(sp, title, url);
         }
 
+        /** Resolve a social/video page link to a direct video URL (og:video, twitter:player:stream, or a media .mp4 in the HTML). */
+        @JavascriptInterface public void resolveVideo(final int id, final String link) {
+            if (t.url == null || !t.url.startsWith("file:///android_asset/")) { finderVid(id, ""); return; }
+            new Thread(new Runnable() { public void run() {
+                String found = "";
+                try {
+                    java.net.HttpURLConnection c = (java.net.HttpURLConnection) new java.net.URL(link).openConnection();
+                    c.setInstanceFollowRedirects(true);
+                    c.setConnectTimeout(9000); c.setReadTimeout(9000);
+                    c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/131 Mobile Safari/537.36");
+                    c.setRequestProperty("Accept-Language", "en-US,en;q=0.9");
+                    java.io.BufferedReader br = new java.io.BufferedReader(new java.io.InputStreamReader(c.getInputStream()));
+                    StringBuilder sb = new StringBuilder(); String ln; int cap = 0;
+                    while ((ln = br.readLine()) != null && cap < 4_000_000) { sb.append(ln).append('\n'); cap += ln.length(); }
+                    br.close();
+                    String html = sb.toString();
+                    found = firstMatch(html,
+                        "property=\"og:video\"[^>]*content=\"([^\"]+)\"",
+                        "property=\"og:video:url\"[^>]*content=\"([^\"]+)\"",
+                        "property=\"og:video:secure_url\"[^>]*content=\"([^\"]+)\"",
+                        "name=\"twitter:player:stream\"[^>]*content=\"([^\"]+)\"",
+                        "\"video_url\":\"([^\"]+\\.mp4[^\"]*)\"",
+                        "\"playbackUrl\":\"([^\"]+)\"",
+                        "\"contentUrl\":\"([^\"]+\\.mp4[^\"]*)\"",
+                        "(https?:[^\"'\\s]+\\.mp4[^\"'\\s]*)");
+                    if (found != null) found = found.replace("\\u0026", "&").replace("\\/", "/");
+                } catch (Throwable e) { found = ""; }
+                finderVid(id, found == null ? "" : found);
+            } }).start();
+        }
+        private String firstMatch(String html, String... patterns) {
+            for (String p : patterns) {
+                try { java.util.regex.Matcher m = java.util.regex.Pattern.compile(p).matcher(html); if (m.find()) return m.group(1); } catch (Throwable e) {}
+            }
+            return "";
+        }
+        private void finderVid(final int id, final String url) {
+            final WebView w = t.wv;
+            ui.post(new Runnable() { public void run() { try { w.evaluateJavascript("window.__vpVid&&window.__vpVid(" + id + "," + org.json.JSONObject.quote(url) + ")", null); } catch (Throwable e) {} } });
+        }
+
         /** Active download tasks (for the in-app Downloads screen): [{id,name,done,total,state}]. */
         @JavascriptInterface public String dlTasks() {
             if (t.url == null || !t.url.startsWith("file:///android_asset/")) return "[]";

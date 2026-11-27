@@ -22,6 +22,11 @@ p{color:#aaa;font-size:13.5px;line-height:1.45}
 <h2>Find the full video</h2>
 <p>Pick the clip (10-30 seconds). The app reads any name on screen, picks the clearest frame, and searches automatically to find the movie or the full video. If the first search finds nothing, tap “search another engine” or “try a different frame” below.</p>
 <label class="pick">Choose the clip &amp; find it<input id="f" type="file" accept="video/*" style="display:none"></label>
+<div class="mem" style="margin:10px 0">
+<b>Or paste a video link</b> (Instagram, Twitter/X, TikTok, Facebook, a direct .mp4…):
+<div class="find" style="margin:8px 0 0"><input id="lk" placeholder="paste the video/reel link" autocomplete="off"><button id="lkb">Find</button></div>
+<div style="font-size:12px;color:#889;margin-top:6px">Instagram/TikTok links only work if the post is public. If it can't read the link, open the post, play the video, then use “Choose the clip”.</div>
+</div>
 <div id="again"></div>
 <div id="clues"></div>
 <div class="mem" style="margin-top:10px">
@@ -183,6 +188,35 @@ function remember(name){if(!name)return;var h=LS('solved',[]);h=h.filter(functio
 function showMem(){var box=document.getElementById('mem');var h=LS('solved',[]);if(!h.length){box.innerHTML='';return}
 box.innerHTML='<div class="mem"><b>Found before</b> (tap to check where to watch):<br>'+h.map(function(x){return '<a href="#" data-n="'+encodeURIComponent(x.n)+'">'+x.n.replace(/</g,'&lt;')+'</a>'}).join(' &nbsp;·&nbsp; ')+'</div>';
 Array.prototype.forEach.call(box.querySelectorAll('a'),function(a){a.onclick=function(e){e.preventDefault();var n=decodeURIComponent(a.dataset.n);document.getElementById('q').value=n;svc(n);document.getElementById('q').scrollIntoView()}})}
+
+/* ---- find by pasted video link ---- */
+function startFromVideoUrl(vurl){
+ out.innerHTML='';frames=[];bestBlob=null;lastUrl='';st.textContent='Loading the video…';
+ v.crossOrigin='anonymous';
+ v.src=vurl;
+ v.onloadedmetadata=function(){var d=isFinite(v.duration)&&v.duration>0?v.duration:10;soundCard();grab([0.1,0.25,0.4,0.55,0.7,0.85].map(function(p){return Math.max(0.1,d*p)}),0)};
+ v.onerror=function(){st.innerHTML='Could not load that video directly (the site may block it or need login). Open the post, play the video, then use “Choose the clip” above.';};
+}
+/* resolve a social link to a direct video URL via the app (reads og:video / media json; no browser CORS limit) */
+var lkCbs={},lkN=0;window.__vpVid=function(id,url){var f=lkCbs[id];delete lkCbs[id];if(f)f(url||'')};
+function resolveVideoUrl(link,cb){
+ // direct video file → use as-is
+ if(/\.(mp4|webm|m3u8|mov)(\?|$)/i.test(link)){cb(link);return;}
+ if(window.VPApp&&VPApp.resolveVideo){var id=++lkN;lkCbs[id]=cb;try{VPApp.resolveVideo(id,link)}catch(e){cb('')}return;}
+ cb('');
+}
+function findByLink(){
+ var link=(document.getElementById('lk').value||'').trim();
+ if(!link){st.textContent='Paste a video or reel link first.';return;}
+ if(!/^https?:\/\//i.test(link))link='https://'+link;
+ st.textContent='Reading the link…';
+ resolveVideoUrl(link,function(vurl){
+  if(!vurl){st.innerHTML='Couldn’t get the video from that link. It may be private or login-only. Open the post, play the video, then use “Choose the clip” above.';return;}
+  startFromVideoUrl(vurl);
+ });
+}
+document.getElementById('lkb').onclick=findByLink;
+document.getElementById('lk').addEventListener('keydown',function(e){if(e.key==='Enter')findByLink();});
 
 document.getElementById('f').onchange=function(){var f=this.files[0];if(!f)return;out.innerHTML='';frames=[];bestBlob=null;lastUrl='';st.textContent='Reading the clip…';
 nameHint(f.name);

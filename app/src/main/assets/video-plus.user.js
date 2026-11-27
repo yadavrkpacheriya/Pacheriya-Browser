@@ -60,11 +60,31 @@
     ast.textContent = 'ins.adsbygoogle,[class~="adsbygoogle"],[id^="google_ads"],iframe[src*="doubleclick"],iframe[src*="googlesyndication"],iframe[src*="exoclick"],iframe[src*="juicyads"],iframe[src*="trafficjunky"],iframe[src*="adsterra"],iframe[src*="popads"],[class~="ad-banner"],[class~="ads-container"],[class*="adsbox"],[class*="ad-slot"],[class*="ad-container"],[class*="ad-wrapper"],[class*="advertisement"],[id*="ad-slot"],[id*="ad-container"],[data-ad],[data-ad-slot],.google-auto-placed,.adsbygoogle-noablate{display:none!important;height:0!important;min-height:0!important}';
     document.documentElement.appendChild(ast);
 
+    /* ---- ensure every video has visible play/pause controls, and pause autoplay that slips through ---- */
+    var userPlayed = 0;
+    ['pointerdown','touchstart','mousedown','click'].forEach(function(ev){document.addEventListener(ev,function(){userPlayed=Date.now();},true);});
+    function ensureControls() {
+      try {
+        [].forEach.call(document.querySelectorAll('video'), function (v) {
+          if (v.__vpCtl) return; v.__vpCtl = 1;
+          // give it native controls if the site stripped them (so there's always a play/pause/seek bar)
+          if (!v.hasAttribute('controls') && !v.closest('[class*="player"],[class*="plyr"],[class*="jw"],[class*="video-js"]')) {
+            try { v.setAttribute('controls', ''); v.controls = true; } catch (e) {}
+          }
+          // if it's autoplaying without a tap, pause it so it waits for the user
+          if (!v.paused && Date.now() - userPlayed > 1500 && !v.loop) {
+            try { v.pause(); } catch (e) {}
+          }
+        });
+      } catch (e) {}
+    }
+
     /* ---- autoplay + scroll-lock rescue: stop pages that freeze on an auto-playing video ---- */
     // If a video starts playing on its own (not from a user tap) and the page has locked scrolling, pause+mute it
     // and restore scrolling, so an autoplay takeover can't trap the page.
-    var userPlayed = 0;
-    document.addEventListener('click', function () { userPlayed = Date.now(); }, true);
+    ensureControls();
+    try { new MutationObserver(ensureControls).observe(document.documentElement, { childList: true, subtree: true }); } catch (e) {}
+    setInterval(ensureControls, 1500);
     document.addEventListener('play', function (e) {
       try {
         var v = e.target; if (!v || v.tagName !== 'VIDEO') return;

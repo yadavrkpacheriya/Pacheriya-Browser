@@ -818,7 +818,8 @@ public class MainActivity extends Activity {
         applyDark(s);
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
-        s.setMediaPlaybackRequiresUserGesture(false);
+        // Autoplay OFF by default: videos wait for your tap (setting "autoplay" flips this).
+        s.setMediaPlaybackRequiresUserGesture(!sp.getBoolean("autoplay", false));
         s.setSupportMultipleWindows(true);
         s.setJavaScriptCanOpenWindowsAutomatically(true);
         s.setUseWideViewPort(true);
@@ -1542,6 +1543,7 @@ public class MainActivity extends Activity {
             "🔑 Save passwords: " + (sp.getBoolean("pwsave", true) ? "ON" : "off"),
             "Saved passwords & breach check",
             "⭐ Set as default browser",
+            "▶ Autoplay videos: " + (sp.getBoolean("autoplay", false) ? "ON" : "off (wait for tap)"),
             "Check for update",
             "Clear browsing data"
         };
@@ -1593,8 +1595,15 @@ public class MainActivity extends Activity {
                         }
                         case 10: showSavedPasswords(); return;
                         case 11: setAsDefaultBrowser(); return;
-                        case 12: Updater.check(MainActivity.this, true); return;
-                        case 13:
+                        case 12: {
+                            boolean on = !sp.getBoolean("autoplay", false);
+                            sp.edit().putBoolean("autoplay", on).apply();
+                            for (Tab tb : tabs) tb.wv.getSettings().setMediaPlaybackRequiresUserGesture(!on);
+                            toast(on ? "Autoplay on" : "Autoplay off — videos wait for your tap");
+                            break;
+                        }
+                        case 13: Updater.check(MainActivity.this, true); return;
+                        case 14:
                             sp.edit().putString("hist", "[]").apply();
                             CookieManager.getInstance().removeAllCookies(null);
                             cur.wv.clearCache(true);

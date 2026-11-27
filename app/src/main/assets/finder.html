@@ -137,27 +137,53 @@ function cleanName(t){
 }
 function showTextClues(){
  var box=document.getElementById('clues');if(!box)return;
- var all=[];var pend=Math.min(3,frames.length),done=0;
+ var all=[];var pend=Math.min(6,frames.length),done=0;
  st.innerHTML='Reading any names or titles on screen…';
  for(var i=0;i<pend;i++){ (function(b){ readFrameText(b,function(txt){ cleanName(txt).forEach(function(n){ if(all.indexOf(n)<0)all.push(n)}); if(++done>=pend)render(); }); })(frames[i].b); }
  if(pend===0)render();
  function render(){
-  if(!all.length){box.innerHTML='';return;}
-  box.innerHTML='<div class="mem"><b>Found on screen</b> (tap to search as the title/name):<br>'+all.slice(0,8).map(function(n){return '<a href="#" data-n="'+encodeURIComponent(n)+'">'+n.replace(/</g,'&lt;')+'</a>'}).join(' &nbsp;·&nbsp; ')+'</div>';
-  Array.prototype.forEach.call(box.querySelectorAll('a'),function(a){a.onclick=function(e){e.preventDefault();var n=decodeURIComponent(a.dataset.n);location.href='https://www.google.com/search?q='+encodeURIComponent(n+' movie')}});
+  if(!all.length){box.innerHTML='<div class="mem" style="border-color:#555">No on-screen text found. Reverse-image search (tap a frame above) or the sound options are your best bet for this clip.</div>';return;}
+  box.innerHTML='<div class="fr" style="border:1px solid #E2B33C"><b>⭐ Best way to find it — text seen on screen</b><br><span style="font-size:12px;color:#9aa">Tap a word/name to find the exact movie or show it belongs to:</span><br><div style="margin-top:8px">'+
+   all.slice(0,10).map(function(n){return '<a href="#" data-n="'+encodeURIComponent(n)+'" style="display:inline-block;background:#26262f;color:#E2B33C;border-radius:14px;padding:6px 11px;margin:3px;text-decoration:none;font-size:13px">'+n.replace(/</g,'&lt;')+'</a>'}).join('')+'</div>'+
+   '<div style="margin-top:8px"><a href="#" id="allclues" style="color:#9aa;font-size:12px">search all together</a></div></div>';
+  function run(q){location.href='https://www.google.com/search?q='+encodeURIComponent(q+' which movie OR anime OR drama OR webseries full video');}
+  Array.prototype.forEach.call(box.querySelectorAll('a[data-n]'),function(a){a.onclick=function(e){e.preventDefault();run(decodeURIComponent(a.dataset.n));}});
+  var ac=document.getElementById('allclues');if(ac)ac.onclick=function(e){e.preventDefault();run(all.slice(0,4).join(' '));};
  }
 }
 function pickDone(){
  if(!frames.length){st.textContent='Could not read pictures from this clip. Try another file.';return;}
  frames.sort(function(a,b){return b.s-a.s});
- showTextClues();
  bestBlob=frames[0].b;
- st.innerHTML='Best frame chosen. Searching automatically…';
+ showTextClues();           // on-screen text is the BEST clue for identifying a movie/show
+ st.innerHTML='Reading the clip… upload all frames, then tap any to search it.';
+ /* upload the top frames in PARALLEL so each can be searched, and show them as a grid */
+ var pick=frames.slice(0,6);
+ var grid=document.getElementById('framegrid'); if(!grid){grid=document.createElement('div');grid.id='framegrid';out.appendChild(grid);}
+ grid.innerHTML='<div class="mem" style="margin-bottom:6px"><b>Frames from your clip</b> — tap one to reverse-search it, or use the engine buttons under each:</div>';
+ grid.style.cssText='display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:8px 0';
+ var upped=0;
+ pick.forEach(function(fr,idx){
+  var cell=document.createElement('div');cell.style.cssText='background:#1c1c24;border-radius:9px;overflow:hidden';
+  var im=document.createElement('img');im.src=URL.createObjectURL(fr.b);im.style.cssText='width:100%;aspect-ratio:16/10;object-fit:cover;display:block;cursor:pointer';
+  cell.appendChild(im);grid.appendChild(cell);
+  // upload each frame in parallel; store its URL on the element
+  uploadFrame(fr.b,function(u){upped++;if(u&&u.indexOf('ERR:')!==0){fr.url=u;im.onclick=function(){multiEngine(u)};}else{im.style.opacity='.4';}
+    if(upped===pick.length)st.innerHTML='Tap a frame to search it. Best clue: use any <b>on-screen text</b> below — it finds the movie far better than the picture.';});
+ });
  var ag=document.getElementById('again');
- ag.innerHTML='<div class="mem">If it did not match: <a href="#" id="oe">search another engine</a> &nbsp;·&nbsp; <a href="#" id="af">try a different frame</a></div>';
- document.getElementById('oe').onclick=function(ev){ev.preventDefault();window.__eng=(window.__eng||0)+1;autoSearch(bestBlob,window.__eng)};
- document.getElementById('af').onclick=function(ev){ev.preventDefault();if(frames.length>1){frames.push(frames.shift());bestBlob=frames[0].b;lastUrl='';}autoSearch(bestBlob,0)};
+ ag.innerHTML='<div class="mem">Picture search matches clothing/scenes, so it often finds look-alikes, not the exact video. For the real source, prefer the <b>on-screen text</b> and <b>sound</b> options. <a href="#" id="alleng">open all engines for the best frame</a></div>';
+ document.getElementById('alleng').onclick=function(ev){ev.preventDefault();if(bestBlob){uploadFrame(bestBlob,function(u){if(u&&u.indexOf('ERR:')!==0)multiEngine(u)})}};
+ // auto-run the single best frame on the top engine as a starting point
  autoSearch(bestBlob,0);
+}
+/* open a chooser of ALL reverse-image engines for one frame URL (so you can try each quickly) */
+function multiEngine(u){
+ var box=document.getElementById('engpick');if(!box){box=document.createElement('div');box.id='engpick';out.insertBefore(box,out.firstChild);}
+ box.innerHTML='<div class="fr"><b>Search this frame on:</b><div class="row" style="margin-top:8px"></div></div>';
+ var row=box.querySelector('.row');
+ ENG.forEach(function(e){var b=document.createElement('button');b.className='b p';b.textContent=e[0];b.onclick=function(){bump(e[0]);location.href=e[1](u)};row.appendChild(b)});
+ box.scrollIntoView({behavior:'smooth'});
 }
 /* upload the best frame once, then open the chosen reverse-image engine straight on its results */
 function autoSearch(blob,tryEng){

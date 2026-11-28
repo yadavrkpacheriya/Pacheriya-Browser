@@ -34,6 +34,22 @@ function api(p,cb){var id=++nn;cbs[id]=function(ok,t){if(!ok)return cb(null);try
 var RT=['safe','suggestive','erotica','pornographic'],RN={safe:'Safe',suggestive:'Suggestive',erotica:'Erotica 18+',pornographic:'Adult 18+'};
 var rat=LS('rat',['safe','suggestive']),lang=LS('lang','en'),saver=LS('saver',false),LGS=['en','hi','ja','ko','zh','es','fr','pt-br','ru','id','ar'];
 var sortBy=LS('sortBy','follow'),genre=LS('genre',''),status=LS('status','');
+var minCh=LS('minCh',0),CHC=LS('chc',{}),cq=[],cRun=0,chT=0;
+var MINS={0:'Any chapters',10:'10+ chapters',30:'30+ chapters',50:'50+ chapters',100:'100+ chapters',200:'200+ chapters',500:'500+ chapters'};
+/* chapter count per title (in the chosen language): shown on every card and used by the "minimum chapters" filter */
+function chKey(id){return id+'|'+lang}
+function saveChc(){clearTimeout(chT);chT=setTimeout(function(){var k=Object.keys(CHC);if(k.length>800){k.sort(function(a,b){return CHC[a].ts-CHC[b].ts}).slice(0,k.length-600).forEach(function(x){delete CHC[x]})}SV('chc',CHC)},1500)}
+function applyCh(card,n){var mt=card.querySelector('.meta');if(!mt){mt=document.createElement('div');mt.className='meta';card.appendChild(mt)}
+ var sp=mt.querySelector('.chn');if(!sp){sp=document.createElement('span');sp.className='chn';sp.style.color='#E2B33C';mt.insertBefore(sp,mt.firstChild)}
+ sp.textContent=n+' ch';card.style.opacity='';card.style.display=(minCh&&n<minCh)?'none':''}
+function needCount(card,id){var e=CHC[chKey(id)];if(e&&Date.now()-e.ts<86400000){applyCh(card,e.n);return}
+ if(minCh)card.style.opacity='.4';cq.push([card,id]);pumpCh()}
+function pumpCh(){while(cRun<3&&cq.length){(function(job){cRun++;
+ api('/manga/'+job[1]+'/aggregate?'+A('translatedLanguage',[lang]),function(j){cRun--;
+  if(j&&j.volumes){var n=0,v=j.volumes;Object.keys(v).forEach(function(x){var ch=v[x]&&v[x].chapters;if(ch)n+=Array.isArray(ch)?ch.length:Object.keys(ch).length});
+   CHC[chKey(job[1])]={n:n,ts:Date.now()};saveChc();if(job[0].isConnected)applyCh(job[0],n)}
+  else if(job[0].isConnected)job[0].style.opacity='';
+  setTimeout(pumpCh,220)})})(cq.shift())}}
 var SORTS={follow:'Popular',rating:'Top rated',latest:'Latest update',created:'Newest',title:'Title A-Z',relevance:'Relevance'};
 /* MangaDex genre tag ids (common ones) */
 var GENRES={'':'All genres',Action:'391b0423-d847-456f-aff0-8b0cfc03066b',Adventure:'87cc87cd-a395-47af-b27a-93258283bbc6',Comedy:'4d32cc48-9f00-4cca-9b5a-a839f0764984',Drama:'b9af3a63-f058-46de-a9a0-e0c13906197a',Fantasy:'cdc58593-87dd-415e-bbc0-2ec27bf404cc',Horror:'cdad7e68-1419-41dd-bdce-27753074a640',Isekai:'ace04997-f6bd-436e-b261-779182193d3d',Romance:'423e2eae-a7a2-4a8b-ac03-a8351462d71d','Sci-Fi':'256c8bd9-4904-4360-bf4f-508a76d67183','Slice of Life':'e5301a23-ebd9-49dd-a0cb-2add944c7fe9',Sports:'69964a64-2f90-4d33-beeb-f3ed2875eb4c',Thriller:'07251805-a27e-4d59-b488-f0bfbec15168',Mystery:'ee968100-4191-4968-93d3-f82d72be7e46',Ecchi:'f5ba408b-0e7a-484d-8d49-4e9125ac96de'};
@@ -48,7 +64,8 @@ filtrow()}
 function opt(map,sel){return Object.keys(map).map(function(k){return '<option value="'+k+'"'+(k==sel?' selected':'')+'>'+map[k]+'</option>'}).join('')}
 function filtrow(){
  var r=document.getElementById('fr');if(!r){r=document.createElement('div');r.className='filtrow';r.id='fr';$('#chips').parentNode.appendChild(r)}
- r.innerHTML='<select id="fsort">'+opt(SORTS,sortBy)+'</select><select id="fgen">'+opt(GENRES,genre)+'</select><select id="fsta">'+opt(STATS,status)+'</select>';
+ r.innerHTML='<select id="fsort">'+opt(SORTS,sortBy)+'</select><select id="fgen">'+opt(GENRES,genre)+'</select><select id="fsta">'+opt(STATS,status)+'</select><select id="fmin">'+opt(MINS,minCh)+'</select>';
+ document.getElementById('fmin').onchange=function(){minCh=+this.value||0;SV('minCh',minCh);route()};
  document.getElementById('fsort').onchange=function(){sortBy=this.value;SV('sortBy',sortBy);route()};
  document.getElementById('fgen').onchange=function(){genre=this.value;SV('genre',genre);route()};
  document.getElementById('fsta').onchange=function(){status=this.value;SV('status',status);route()};
@@ -72,7 +89,7 @@ function grid(list,el){var g=document.createElement('div');g.className='grid';li
  var meta=[];if(pr&&pr.t)meta.push('Read '+(pr.r||0)+'/'+pr.t);else if(lastCh)meta.push('Ch '+lastCh);if(updIso&&relTime(updIso))meta.push(relTime(updIso));
  c.innerHTML=badge+newBadge+'<img loading="lazy">'+progHtml+'<div class="tt"></div>'+(meta.length?'<div class="meta">'+meta.map(function(x){return '<span>'+x+'</span>'}).join('')+'</div>':'');
  ld(c.querySelector('img'),m.cv||cover(m));c.querySelector('.tt').textContent=m.tt||ttl(m);
- c.onclick=function(){location.hash='#m/'+m.id};g.appendChild(c)});el.appendChild(g)}
+ c.onclick=function(){location.hash='#m/'+m.id};g.appendChild(c);needCount(c,m.id)});el.appendChild(g)}
 function msg(t){$('#v').innerHTML='<div class="msg">'+t+'</div>'}
 function orderParam(q){
  var map={follow:'followedCount',rating:'rating',latest:'latestUploadedChapter',created:'createdAt',title:'title',relevance:'relevance'};
@@ -80,13 +97,14 @@ function orderParam(q){
  var dir=(key==='title')?'asc':'desc';
  return 'order%5B'+map[key]+'%5D='+dir;
 }
-function browse(q){$('#bar').style.display='none';msg('Loading...');
+function browse(q){$('#bar').style.display='none';msg('Loading...');cq=[];
 var p='/manga?limit=48&includes%5B%5D=cover_art&'+A('contentRating',rat)+'&'+A('availableTranslatedLanguage',[lang])+'&'+orderParam(q);
 if(q)p+='&title='+encodeURIComponent(q);
 if(genre)p+='&includedTags%5B%5D='+genre;
 if(status)p+='&status%5B%5D='+status;
 api(p,function(j){var v=$('#v');v.innerHTML='';var h=document.createElement('h2');var lbl=q?'Results for "'+q+'"':(SORTS[sortBy]+(genre?' · '+Object.keys(GENRES).filter(function(k){return GENRES[k]==genre})[0]:'')+(status?' · '+STATS[status]:''));h.textContent=lbl;v.appendChild(h);
  if(q)v.appendChild(otherSites(q));
+ if(minCh){var nt=document.createElement('div');nt.style.cssText='font-size:12px;color:#9aa;margin:0 2px 8px';nt.textContent='Showing only titles with '+minCh+'+ chapters in "'+lang+'" (faded cards are still being counted).';v.appendChild(nt)}
  if(!j||!j.data){v.insertAdjacentHTML('beforeend','<div class="msg">Could not load MangaDex. Try the other sites above.</div>');return}
  if(!j.data.length){v.insertAdjacentHTML('beforeend','<div class="msg">No MangaDex match. Try the other sites above, or another word/language/genre.</div>');return}
  grid(j.data,v)})}

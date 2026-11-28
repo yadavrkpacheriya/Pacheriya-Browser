@@ -12,6 +12,6 @@ public class DlActionReceiver extends BroadcastReceiver {
         if (id == null || a == null) return;
         if ("pause".equals(a)) Downloader.pause(id);
         else if ("resume".equals(a)) Downloader.resume(id, c.getApplicationContext());
-        else if ("cancel".equals(a)) Downloader.cancel(id);
+        else if ("cancel".equals(a)) Downloader.cancel(id, c.getApplicationContext());
     }
 }

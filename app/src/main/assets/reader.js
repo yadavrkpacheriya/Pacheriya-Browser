@@ -31,7 +31,7 @@
     });
   }
   /* ---- translate the page in place ---- */
-  R.page = function (tl) {
+  R.translatePage = function (tl) {
     if (!tl) return;
     var l = (document.documentElement.lang || '').toLowerCase();
     if (l && l.slice(0, 2) === tl) return;
@@ -216,7 +216,8 @@
   function fetchNext() {
     if (!nxt || loaded[nxt]) return;
     var u = nxt; loaded[u] = 1; busy = true; lastFetch = Date.now();
-    fetch(u, { credentials: 'include' }).then(function (r) { if (!r.ok) throw 0; return r.text(); }).then(function (h) {
+    var gone = false;
+    fetch(u, { credentials: 'include' }).then(function (r) { if (r.status === 404 || r.status === 410) { gone = true; throw 0; } if (!r.ok) throw 0; return r.text(); }).then(function (h) {
       var d = new DOMParser().parseFromString(h, 'text/html'), el = best(d);
       if (!el) { navTo(u); return; }
       nxt = nextUrl(d, u);
@@ -224,7 +225,11 @@
       var h1 = d.querySelector('h1'), add = fill(el, u, (h1 && txt(h1).trim()) || d.title || '');
       paint();
       if (R.tl) trList(add);
-    }).catch(function () { navTo(u); }).then(function () { busy = false; });
+    }).catch(function () {
+      // 404 = there simply is no next chapter (last one, or a guessed address): stay in the book instead of jumping to an error page
+      if (gone) { nxt = ''; var e = document.createElement('p'); e.textContent = '— End of the available chapters —'; e.style.cssText = 'text-align:center;opacity:.6;margin:30px 0'; box.appendChild(e); return; }
+      navTo(u);
+    }).then(function () { busy = false; });
   }
   /* navigate to a chapter and have reader mode open itself again on the new page (seamless: user never leaves reader) */
   function navTo(u) {
@@ -300,6 +305,8 @@
     if (autoTl) R.auto = autoTl;
     var reopen = false;
     try { reopen = sessionStorage.getItem('__vpReopen') === '1'; } catch (e) {}
+    /* Auto-translate setting: translate the normal page in place (this was silently skipped before). */
+    if (autoTl && !reopen && !R.on) { try { R.translatePage(autoTl); } catch (e) {} }
     if (!reopen || R.on) return;
     try { var tl = sessionStorage.getItem('__vpReopenTl'); if (tl) R.auto = tl; } catch (e) {}
     var tries = 0;

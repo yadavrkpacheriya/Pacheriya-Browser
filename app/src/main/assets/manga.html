@@ -76,7 +76,7 @@ function grid(list,el){var g=document.createElement('div');g.className='grid';li
 function msg(t){$('#v').innerHTML='<div class="msg">'+t+'</div>'}
 function orderParam(q){
  var map={follow:'followedCount',rating:'rating',latest:'latestUploadedChapter',created:'createdAt',title:'title',relevance:'relevance'};
- var key=q?'relevance':(sortBy==='relevance'?'followedCount':sortBy);
+ var key=q?'relevance':(sortBy==='relevance'?'follow':sortBy);
  var dir=(key==='title')?'asc':'desc';
  return 'order%5B'+map[key]+'%5D='+dir;
 }

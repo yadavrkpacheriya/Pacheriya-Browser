@@ -37,7 +37,7 @@ final class Updater {
         final SharedPreferences sp = a.getSharedPreferences("vpb", Context.MODE_PRIVATE);
         long now = System.currentTimeMillis();
         if (!manual && now - sp.getLong("lastCheck", 0) < 45L * 60 * 1000) return;
-        if (busy) return;
+        if (busy) { if (manual) toast(a, "An update is already downloading or installing"); return; }
         sp.edit().putLong("lastCheck", now).apply();
         new Thread(new Runnable() {
             public void run() {
@@ -48,13 +48,13 @@ final class Updater {
                     h.setRequestProperty("Accept", "application/vnd.github+json");
                     h.setRequestProperty("User-Agent", "VideoPlusBrowser");
                     if (h.getResponseCode() != 200) throw new Exception("HTTP " + h.getResponseCode());
-                    StringBuilder sb = new StringBuilder();
+                    java.io.ByteArrayOutputStream sb = new java.io.ByteArrayOutputStream();
                     InputStream in = h.getInputStream();
                     byte[] b = new byte[8192];
                     int n;
-                    while ((n = in.read(b)) > 0) sb.append(new String(b, 0, n, "UTF-8"));
+                    while ((n = in.read(b)) > 0) sb.write(b, 0, n);   // decode once at the end so multi-byte characters are never split
                     in.close();
-                    JSONObject o = new JSONObject(sb.toString());
+                    JSONObject o = new JSONObject(sb.toString("UTF-8"));
                     Matcher m = Pattern.compile("build:(\\d+)").matcher(o.optString("body", ""));
                     if (!m.find()) throw new Exception("no version info");
                     final int latest = Integer.parseInt(m.group(1));
@@ -88,6 +88,9 @@ final class Updater {
             begin(a, u, b, true);
         }
     }
+
+    /** Called by InstallReceiver when an install did not complete, so the next check is not blocked forever. */
+    static void installFailed() { busy = false; }
 
     private static void toast(final Activity a, final String s) {
         a.runOnUiThread(new Runnable() { public void run() { Toast.makeText(a, s, Toast.LENGTH_LONG).show(); } });
@@ -147,17 +150,19 @@ final class Updater {
                     final File apk = f;
                     a.runOnUiThread(new Runnable() {
                         public void run() {
-                            if (dlg != null) dlg.dismiss();
+                            try { if (dlg != null) dlg.dismiss(); } catch (Throwable e) {}
+                            if (a.isFinishing() || a.isDestroyed()) { busy = false; return; }   // screen is gone: try again next launch
                             if (manual) install(a, apk);
                             else new AlertDialog.Builder(a).setTitle("Update " + build + " ready")
                                 .setMessage("The app will close for a second and reopen updated. Your tabs are kept.")
                                 .setPositiveButton("Update now", new DialogInterface.OnClickListener() { public void onClick(DialogInterface d, int w) { install(a, apk); } })
-                                .setNegativeButton("Later", new DialogInterface.OnClickListener() { public void onClick(DialogInterface d, int w) { busy = false; } }).show();
+                                .setNegativeButton("Later", new DialogInterface.OnClickListener() { public void onClick(DialogInterface d, int w) { busy = false; } })
+                                .setOnCancelListener(new DialogInterface.OnCancelListener() { public void onCancel(DialogInterface d) { busy = false; } }).show();
                         }
                     });
                 } catch (final Exception e) {
                     busy = false;
-                    a.runOnUiThread(new Runnable() { public void run() { if (dlg != null) dlg.dismiss(); } });
+                    a.runOnUiThread(new Runnable() { public void run() { try { if (dlg != null) dlg.dismiss(); } catch (Throwable x) {} } });
                     toast(a, "Update failed: " + e.getMessage());
                 }
             }

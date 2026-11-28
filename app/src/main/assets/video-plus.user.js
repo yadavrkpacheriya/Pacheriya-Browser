@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Plus
 // @namespace    pacheriya
-// @version      3.5
+// @version      3.6
 // @description  Built-in ad and popup blocker, theater look, picture enhancer, swipe gestures, speed, PiP and subtitles for videos on any website
 // @match        *://*/*
 // @run-at       document-start
@@ -28,7 +28,14 @@
     function sketchy(u) { try { return SKETCHY.test(new URL(u, location.href).hostname); } catch (e) { return false; } }
     var _open = window.open;
     window.open = function (u) {
-      try { if (u && !sketchy(u) && !bad(u) && new URL(u, location.href).hostname === location.hostname) return _open.apply(this, arguments); } catch (e) {}
+      try {
+        // an empty / about:blank popup the page fills in itself (sign-in flows): only right after a genuine tap
+        if (!u || /^about:blank/i.test(u)) return (Date.now() - lastReal < 1500) ? _open.apply(this, arguments) : null;
+        if (bad(u)) return null;
+        if (sameSite(u)) return _open.apply(this, arguments);
+        // another site: only right after a genuine tap on a real link/button, and never to a throwaway ad domain
+        if (!sketchy(u) && Date.now() - lastReal < 1500) return _open.apply(this, arguments);
+      } catch (e) {}
       return null;
     };
     // block target=_blank / cross-site anchor taps that open pop-under ad tabs
@@ -38,7 +45,9 @@
       try {
         var h = new URL(a.href, location.href).hostname;
         var off = h !== location.hostname && h.slice(-location.hostname.length - 1) !== '.' + location.hostname;
-        if ((a.target === '_blank' && off) || sketchy(a.href) || bad(a.href)) { e.preventDefault(); e.stopPropagation(); }
+        // Block only real ad links: known ad hosts, or a NEW-TAB jump to a throwaway domain on another site.
+        // Ordinary links (including new-tab links to other sites, and every link inside a .top/.fun site) must keep working.
+        if (bad(a.href) || (off && a.target === '_blank' && sketchy(a.href))) { e.preventDefault(); e.stopPropagation(); }
       } catch (x) {}
     }, true);
     [HTMLScriptElement, HTMLIFrameElement, HTMLImageElement].forEach(function (C) {
@@ -61,10 +70,19 @@
     document.documentElement.appendChild(ast);
 
     /* ---- block autoplay + give every video play/pause controls — EVENT-DRIVEN (no polling, so it can't hang) ---- */
-    var userPlayed = 0;
-    ['pointerdown', 'touchstart', 'mousedown', 'click', 'keydown'].forEach(function (ev) {
-      document.addEventListener(ev, function () { userPlayed = Date.now(); }, true);
-    });
+    var userPlayed = 0, tapAt = null;
+    // Only a real TAP counts (finger down and up in the same spot) - a scroll swipe must not let videos start by themselves.
+    function tapped(x, y) {
+      userPlayed = Date.now();
+      try { [].forEach.call(document.querySelectorAll('video'), function (v) { var r = v.getBoundingClientRect(); if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) v.__vpUserOk = 1; }); } catch (x2) {}
+    }
+    document.addEventListener('touchstart', function (e) { var t = e.touches && e.touches[0]; tapAt = (t && e.touches.length === 1) ? { x: t.clientX, y: t.clientY, t: Date.now() } : null; }, { passive: true, capture: true });
+    document.addEventListener('touchend', function (e) {
+      var t = e.changedTouches && e.changedTouches[0], k = tapAt; tapAt = null;
+      if (t && k && Math.abs(t.clientX - k.x) < 14 && Math.abs(t.clientY - k.y) < 14 && Date.now() - k.t < 900) tapped(t.clientX, t.clientY);
+    }, { passive: true, capture: true });
+    document.addEventListener('click', function (e) { tapped(e.clientX, e.clientY); }, true);
+    document.addEventListener('keydown', function () { userPlayed = Date.now(); }, true);
     // The 'play' event fires the instant any video (even one added later) starts — catch autoplay right here.
     document.addEventListener('play', function (e) {
       var v = e.target; if (!v || v.tagName !== 'VIDEO') return;
@@ -74,8 +92,9 @@
         try { if (!v.closest('[class*="player"],[class*="plyr"],[class*="jw"],[class*="video-js"],[class*="shaka"]')) { v.setAttribute('controls', ''); v.controls = true; } } catch (x) {}
       }
       // if play wasn't started by a recent real tap, it's autoplay → pause it so it waits for you
-      if (Date.now() - userPlayed > 1200 && !v.__vpUserOk) {
-        try { v.pause(); v.muted = true; } catch (x) {}
+      // (4s window: many players fetch the stream first and only start a moment after your tap)
+      if (Date.now() - userPlayed > 4000 && !v.__vpUserOk && !v.__vpNoCore) {
+        try { v.pause(); } catch (x) {}   // pause only - never mute, or the video stays silent when you do press play
         // if the page locked scrolling for this autoplay takeover, free it
         try {
           var bs = getComputedStyle(document.body), hs = getComputedStyle(document.documentElement);
@@ -103,7 +122,7 @@
     // expose a manual rescue the app can call (long-press refresh) to force-unfreeze any stuck page
     window.__vpUnstick = function () {
       unlockScroll();
-      try { [].forEach.call(document.querySelectorAll('video'), function (v) { v.pause(); v.muted = true; }); } catch (x) {}
+      try { [].forEach.call(document.querySelectorAll('video'), function (v) { v.pause(); }); } catch (x) {}
       // remove full-viewport fixed overlays that block taps
       try {
         [].forEach.call(document.querySelectorAll('div,section,aside'), function (d) {
@@ -127,7 +146,7 @@
         // iframes pointing at a known ad/sketchy host only
         [].forEach.call(document.querySelectorAll('iframe'), function (f) {
           var s = f.getAttribute('src') || '';
-          if (s && (bad(s) || sketchy(s))) collapse(f);
+          if (s && bad(s)) collapse(f);   // known ad hosts only: video players are often embedded from odd domains
         });
         // elements with an ad-specific class/id — but NEVER if they contain the page's real text or are large content blocks
         [].forEach.call(document.querySelectorAll('ins.adsbygoogle,[class*="adsbygoogle"],[id^="google_ads"],[id*="ad-slot"],[id*="ad-container"],[data-ad],[data-ad-slot]'), function (d) { collapse(d); });
@@ -168,7 +187,7 @@
         var r = el.getBoundingClientRect();
         if (r.width > innerWidth * 0.9 && r.height > innerHeight * 0.7) return false;
         // ignore links pointing off-site to an ad/sketchy host
-        if (el.tagName === 'A' && el.href && (bad(el.href) || sketchy(el.href))) return false;
+        if (el.tagName === 'A' && el.href && (bad(el.href) || (sketchy(el.href) && !sameSite(el.href)))) return false;
         return true;
       } catch (e) { return false; }
     }
@@ -705,14 +724,14 @@
     function applyAspect(v) { if (!v) return; try { v.style.setProperty('transform-origin', 'center center', 'important'); ASPECTS[(S.aspect || 0) % ASPECTS.length][1](v); } catch (e) {} }
     window.__vpAspect = applyAspect;
     // Re-apply the chosen aspect continuously — sites reset <video> styles on play/seek/fullscreen, which is why it "looked the same".
-    setInterval(function () {
+    // (started once only: this used to add another timer every time the panel was opened)
+    if (!window.__vpAspTimer) window.__vpAspTimer = setInterval(function () {
       try {
         if (!S.aspect) return;
         var v = (document.fullscreenElement && document.fullscreenElement.tagName === 'VIDEO') ? document.fullscreenElement : target();
         if (v && v.tagName === 'VIDEO') applyAspect(v);
       } catch (e) {}
     }, 1000);
-    document.addEventListener('fullscreenchange', function () { try { var v = document.fullscreenElement && document.fullscreenElement.tagName === 'VIDEO' ? document.fullscreenElement : target(); if (v) applyAspect(v); } catch (e) {} });
     $('#vp-asp').onclick = function () {
       S.aspect = ((S.aspect || 0) + 1) % ASPECTS.length; save();
       var v = target(); applyAspect(v);
@@ -976,7 +995,13 @@
   document.addEventListener('touchmove', function (e) {
     if (!g) return; var t = e.touches[0], sx = t.clientX - g.x, sy = t.clientY - g.y, dx = g.rot ? sy : sx, dy = g.rot ? -sx : sy;
     if (g.lock && e.cancelable) e.preventDefault();
-    if (!g.mode) { if (Math.abs(dx) < 16 && Math.abs(dy) < 16) return; g.mode = Math.abs(dx) > Math.abs(dy) ? 'seek' : (g.left ? 'bright' : 'vol'); }
+    if (!g.mode) {
+      if (Math.abs(dx) < 16 && Math.abs(dy) < 16) return;
+      var horiz = Math.abs(dx) > Math.abs(dy);
+      // A small video inside a page: an up/down swipe is a normal page scroll, and a sideways swipe only seeks while it is playing.
+      if (!g.lock && (!horiz || g.v.paused)) { g = null; return; }
+      g.mode = horiz ? 'seek' : (g.left ? 'bright' : 'vol');
+    }
     e.preventDefault(); e.stopPropagation();
     if (g.mode === 'seek' && g.v.duration) { g.dt = dx / (g.rot ? g.r.height : g.r.width) * 120; say((g.dt >= 0 ? '+' : '-') + Math.abs(Math.round(g.dt)) + 's'); }
     else if (g.mode === 'vol') {

@@ -19,7 +19,7 @@ final class Security {
         "-paypal.", "paypal-", "-bank.", "appleid-", "apple-id-", "-netflix.", "update-billing",
         "free-gift", "claim-reward", "you-won", "prize-claim", "gift-card-free",
         "crypto-doubler", "double-your", "elon-giveaway", "bitcoin-gift",
-        "hack", "crack-", "keygen-", "warez", "nulled-"
+        "crack-", "keygen-", "warez", "nulled-"
     };
     // File extensions risky to download on Android.
     private static final String[] RISKY_EXT = { ".apk", ".exe", ".bat", ".cmd", ".scr", ".msi", ".dll", ".jar", ".vbs", ".ps1" };

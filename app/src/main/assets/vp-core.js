@@ -19,7 +19,8 @@
       } catch(e){}
     }
     /* touch or hover a link: start fetching it before the tap completes */
-    function pf(a){ if(!a||a.__vpPf)return; var h=a.href; if(!/^https?:/.test(h)||h===location.href)return; a.__vpPf=1; var l=document.createElement('link'); l.rel='prefetch'; l.href=h; (document.head||document.documentElement).appendChild(l); }
+    /* only the CONNECTION is warmed (never the page itself): fetching a link you merely touched could trigger log-out / delete / add-to-cart links */
+    function pf(a){ if(!a||a.__vpPf)return; var h=a.href; if(!/^https?:/.test(h))return; a.__vpPf=1; try{ var o=new URL(h,location.href); if(o.origin!==location.origin) warm(o.origin); }catch(e){} }
     document.addEventListener('touchstart', function (e) { var a=e.target&&e.target.closest?e.target.closest('a[href]'):null; pf(a); }, { passive: true, capture: true });
     document.addEventListener('mouseover', function (e) { var a=e.target&&e.target.closest?e.target.closest('a[href]'):null; pf(a); }, { passive: true, capture: true });
   } catch (e) {}
@@ -69,7 +70,7 @@
       var img = a.querySelector('img');
       [img, a, a.parentElement].forEach(function (el) { if (el) fire(el, ['pointerover', 'pointerenter', 'mouseover', 'mouseenter', 'mousemove']); });
       var vids = a.querySelectorAll('video');
-      Array.prototype.forEach.call(vids, function (v) { try { v.muted = true; v.loop = true; v.playsInline = true; v.play(); } catch (e) {} });
+      Array.prototype.forEach.call(vids, function (v) { try { v.muted = true; v.loop = true; v.playsInline = true; v.__vpUserOk = 1; v.play(); } catch (e) {} });
       var url = previewUrl(a);
       if (url && !vids.length) {
         var host = img.parentElement || a;

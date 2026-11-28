@@ -19,6 +19,7 @@ public class InstallReceiver extends BroadcastReceiver {
                 try { c.startActivity(conf); } catch (Exception e) { /* ignore */ }
             }
         } else if (st != PackageInstaller.STATUS_SUCCESS) {
+            Updater.installFailed();
             int legacy = i.getIntExtra("android.content.pm.extra.LEGACY_STATUS", 0);
             String msg = i.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE);
             // -7 = INSTALL_FAILED_UPDATE_INCOMPATIBLE (signature mismatch with the installed build)

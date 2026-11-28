@@ -106,6 +106,8 @@ public class MainActivity extends Activity {
         String altScheme;
         androidx.swiperefreshlayout.widget.SwipeRefreshLayout swipe;
         boolean panelOpen, autoShown;
+        long navOkUntil;   // a user-started navigation: its own redirect chain is allowed until this time
+        boolean swipeOff;  // reader mode asked for pull-to-refresh to stay off
     }
 
     static class Opt { String label; String url; boolean hls; String tag = "video"; }
@@ -618,7 +620,7 @@ public class MainActivity extends Activity {
         t.wv = makeWebView(t);
         tabs.add(t);
         select(t);
-        if (url != null) t.wv.loadUrl(upgrade(t, url));
+        if (url != null) { t.navOkUntil = System.currentTimeMillis() + 8000; t.wv.loadUrl(upgrade(t, url)); }
         return t;
     }
 
@@ -671,12 +673,17 @@ public class MainActivity extends Activity {
     }
 
     private void closeTab(Tab t) {
-        tabs.remove(t);
+        if (!tabs.remove(t)) return;   // already closed (e.g. a pop-up blocked twice)
+        boolean wasCur = t == cur;
+        // take the closed tab's pull-to-refresh wrapper off the screen too (it used to stay behind when the last tab closed)
+        if (t.swipe != null && t.swipe.getParent() != null) ((ViewGroup) t.swipe.getParent()).removeView(t.swipe);
+        if (wasCur) cur = null;
         if (t.wv.getParent() != null) ((ViewGroup) t.wv.getParent()).removeView(t.wv);
         t.wv.destroy();
         if (t.incognito) cleanupPrivate();
-        if (tabs.isEmpty()) { cur = null; newTab(HOME); }
-        else select(tabs.get(tabs.size() - 1));
+        if (tabs.isEmpty()) newTab(HOME);
+        else if (wasCur) select(tabs.get(tabs.size() - 1));
+        else tabBtn.setText(String.valueOf(tabs.size()));   // a background tab closed: stay on the tab you are reading
     }
 
     /** Capture a small thumbnail of a tab's current page for the tab switcher. */
@@ -808,7 +815,7 @@ public class MainActivity extends Activity {
         w.setOnScrollChangeListener(new View.OnScrollChangeListener() {
             public void onScrollChange(View v, int x, int y, int ox, int oy) {
                 if (barsHidden && oy - y > dp(14)) showChrome();
-                if (t.swipe != null) t.swipe.setEnabled(y == 0);
+                if (t.swipe != null) t.swipe.setEnabled(y == 0 && !t.swipeOff);
             }
         });
         if (t.incognito && WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE)) {
@@ -894,7 +901,9 @@ public class MainActivity extends Activity {
                 // the UA swap happens in onPageStarted. Custom Tab is only a manual fallback (menu) if a site still refuses.
                 // Redirect guard: block a main-frame jump to a different site that wasn't driven by a real, recent tap
                 // (idle redirects, refresh redirects, tap-hijack pop-unders). Only when the blocker is on.
-                if (adblock && r.isForMainFrame() && ("http".equals(sc) || "https".equals(sc))) {
+                boolean ownPage = t.url != null && t.url.startsWith("file:///android_asset/");   // the app's own home / manga / finder pages are trusted
+                if (ownPage && r.isForMainFrame()) t.navOkUntil = System.currentTimeMillis() + 8000;
+                if (adblock && !ownPage && r.isForMainFrame() && ("http".equals(sc) || "https".equals(sc))) {
                     try {
                         String full = r.getUrl().toString();
                         String dest = r.getUrl().getHost();
@@ -915,7 +924,12 @@ public class MainActivity extends Activity {
                             || (t.pageHost != null && isAuthHost(t.pageHost.toLowerCase()))
                             || (dest != null && (dest.endsWith(".cloudflareaccess.com") || dest.contains("oauth") || dest.contains("/sso") || dest.contains("saml")));
                         // Block only when it's an ad/sketchy host, OR a cross-site jump that is NOT a login hop and had no real tap.
-                        if ((adHost || sketchy || (crossSite && !authHop)) && !recentTap && t.pageHost != null) {
+                        // A navigation the user started (tap / address bar) may be followed by its own server redirects for a few seconds.
+                        boolean chain = r.isRedirect() && System.currentTimeMillis() < t.navOkUntil;
+                        if (recentTap) t.navOkUntil = System.currentTimeMillis() + 8000;
+                        // A throwaway-TLD host only counts against a jump to ANOTHER site: browsing inside a .top/.fun site is normal.
+                        boolean block = (adHost && !recentTap) || (crossSite && (sketchy || !authHop) && !recentTap && !chain);
+                        if (block && t.pageHost != null) {
                             Diag.bump("redirects_blocked");
                             final String blocked = dest;
                             ui.post(new Runnable() { public void run() { toast("Blocked a redirect to " + blocked); } });
@@ -936,6 +950,9 @@ public class MainActivity extends Activity {
 
             @Override public void onPageStarted(WebView v, String u, Bitmap f) {
                 t.url = u;
+                t.swipeOff = false;
+                if (t.swipe != null) t.swipe.setEnabled(true);
+                if (u != null && !u.startsWith("http")) t.pageHost = null;   // own page / file: no "previous site" for the redirect guard
                 t.loadStart = System.currentTimeMillis();
                 // Present a clean Chrome UA on sign-in hosts so Google/Microsoft accept the in-app WebView (no other browser needed).
                 try {
@@ -1014,13 +1031,19 @@ public class MainActivity extends Activity {
                 if (u.startsWith("http")) ui.postDelayed(new Runnable() { public void run() { if (t == cur) fitZoom(t, 0); } }, 900);
                 if (u.startsWith("http")) v.evaluateJavascript(readerJs + ";window.__vpReader.page('" + autoTr + "')", null);
                 if (picTr && u.startsWith("http")) v.evaluateJavascript(ocrJs + ";window.__vpPic&&window.__vpPic.start()", null);
-                if (u.startsWith("http") && sp.getBoolean("pwsave", true) && !t.incognito) v.evaluateJavascript(pwJs, null);
+                if (u.startsWith("http") && sp.getBoolean("pwsave", true) && !t.incognito) {
+                    // Only the saved USER NAME is given to the page as a hint; the password is injected natively when you tap Fill.
+                    String hint = null;
+                    try { org.json.JSONArray cr = Passwords.forUrl(MainActivity.this, u); if (cr.length() > 0) hint = cr.optJSONObject(0).optString("u"); } catch (Throwable e) {}
+                    v.evaluateJavascript("window.__vpPwHas=" + (hint == null ? "null" : org.json.JSONObject.quote(hint)) + ";" + pwJs, null);
+                }
             }
             // SPA sites (e.g. WTR-LAB chapters) change the URL via JS without a full reload — catch those for history.
             @Override public void doUpdateVisitedHistory(WebView v, String u, boolean isReload) {
+                if (u == null) return;
                 t.url = u;
-                if (!t.incognito && u != null && u.startsWith("http")) Store.addHistory(sp, v.getTitle(), u);
-                if (t == cur) { ((android.widget.AutoCompleteTextView) urlBox).setText(u.startsWith("file:") ? "" : u, false); setLock(u); }
+                if (!t.incognito && u.startsWith("http")) Store.addHistory(sp, v.getTitle(), u);
+                if (t == cur && u != null) { ((android.widget.AutoCompleteTextView) urlBox).setText(u.startsWith("file:") ? "" : u, false); setLock(u); }
             }
         });
 
@@ -1728,7 +1751,7 @@ public class MainActivity extends Activity {
         }
         /** Reader mode turns pull-to-refresh off (so scrolling up doesn't reload the page) and back on when it closes. */
         @JavascriptInterface public void swipeEnable(final boolean on) {
-            ui.post(new Runnable() { public void run() { if (t.swipe != null) t.swipe.setEnabled(on); } });
+            ui.post(new Runnable() { public void run() { t.swipeOff = !on; if (t.swipe != null) t.swipe.setEnabled(on && t.wv.getScrollY() == 0); } });
         }
         @JavascriptInterface public void subInit(final String model) {
             ui.post(new Runnable() { public void run() { subTab = t; subCall("init", "'" + model.replaceAll("[^a-z]", "") + "'"); } });
@@ -1875,10 +1898,19 @@ public class MainActivity extends Activity {
                     .show();
             } });
         }
-        /** Page asks whether we have saved logins for it (returns [{u,p}] so the page can autofill). Guarded to real pages. */
-        @JavascriptInterface public String pwGet() {
-            if (t.incognito || t.url == null || !t.url.startsWith("http")) return "[]";
-            return Passwords.forUrl(MainActivity.this, t.url).toString();
+        /** "Fill" was tapped on the saved-login bar: put the saved login into the page's own form.
+         *  The password is never handed to page scripts or ad frames; it needs a real touch in the last few seconds. */
+        @JavascriptInterface public void pwFill() {
+            ui.post(new Runnable() { public void run() {
+                try {
+                    if (t.incognito || t.url == null || !t.url.startsWith("http")) return;
+                    if (System.currentTimeMillis() - t.lastTap > 4000) return;
+                    org.json.JSONArray cr = Passwords.forUrl(MainActivity.this, t.url);
+                    if (cr.length() == 0) return;
+                    org.json.JSONObject o = cr.optJSONObject(0);
+                    t.wv.evaluateJavascript("window.__vpPwDoFill&&window.__vpPwDoFill(" + org.json.JSONObject.quote(o.optString("u")) + "," + org.json.JSONObject.quote(o.optString("p")) + ")", null);
+                } catch (Throwable e) { /* ignore */ }
+            } });
         }
 
         /** Let the app's own asset pages (manga, finder, library) record a readable history entry. Guarded to asset origin. */
@@ -1936,7 +1968,7 @@ public class MainActivity extends Activity {
         }
         @JavascriptInterface public void dlPause(String id)  { if (t.url != null && t.url.startsWith("file:///android_asset/")) Downloader.pause(id); }
         @JavascriptInterface public void dlResume(String id) { if (t.url != null && t.url.startsWith("file:///android_asset/")) Downloader.resume(id, MainActivity.this); }
-        @JavascriptInterface public void dlCancel(String id) { if (t.url != null && t.url.startsWith("file:///android_asset/")) Downloader.cancel(id); }
+        @JavascriptInterface public void dlCancel(String id) { if (t.url != null && t.url.startsWith("file:///android_asset/")) Downloader.cancel(id, getApplicationContext()); }
 
         /** Durable key/value store for the app's own asset pages (home site list, manga filters), kept in app prefs so updates never wipe it. */
         /** The page script calls this only when the user taps a real link/button — authorizes a cross-site navigation. */
@@ -1959,7 +1991,7 @@ public class MainActivity extends Activity {
         @JavascriptInterface public void savedOpen(String url) {
             if (t.url == null || !t.url.startsWith("file:///android_asset/") || url == null) return;
             final String u = url;
-            ui.post(new Runnable() { public void run() { if (cur != null) { cur.lastTap = System.currentTimeMillis(); cur.pageHost = null; cur.wv.loadUrl(u); } } });
+            ui.post(new Runnable() { public void run() { if (cur != null) { cur.lastTap = System.currentTimeMillis(); cur.pageHost = null; cur.navOkUntil = System.currentTimeMillis() + 8000; cur.wv.loadUrl(u); } } });
         }
         @JavascriptInterface public void savedClear(String key) {
             if (t.url == null || !t.url.startsWith("file:///android_asset/")) return;
@@ -2062,7 +2094,8 @@ public class MainActivity extends Activity {
                 }
             }).start();
         }
-        @JavascriptInterface public void dl(final String u) { if (u == null || u.isEmpty()) return; ui.post(new Runnable() { public void run() { Downloader.direct(MainActivity.this, u, t.wv.getSettings().getUserAgentString(), t.url, null); toast("Downloading PDF"); } }); }
+        @JavascriptInterface public void dl(final String u) { if (u == null || u.isEmpty() || t.url == null || !t.url.startsWith("https://appassets.androidplatform.net/")) return; // only the built-in PDF viewer may start a download this way
+            ui.post(new Runnable() { public void run() { Downloader.direct(MainActivity.this, u, t.wv.getSettings().getUserAgentString(), t.url, null); toast("Downloading PDF"); } }); }
         @JavascriptInterface public void trAsync(final int id, final String text, final String tl) {
             new Thread(new Runnable() {
                 public void run() {
@@ -2333,7 +2366,9 @@ public class MainActivity extends Activity {
         else url = searchBase() + Uri.encode(q);
         final String hh = hostOf(url);
         if (hh != null) new Thread(new Runnable() { public void run() { try { java.net.InetAddress.getAllByName(hh); } catch (Exception e) { /* ignore */ } } }).start();
+        if (sp.getBoolean("safebrowse", true) && Security.isDangerousHost(url)) { warnDanger(url); return; }
         cur.lastTap = System.currentTimeMillis(); cur.pageHost = null; // user-initiated: accept the destination
+        cur.navOkUntil = System.currentTimeMillis() + 8000;
         cur.wv.loadUrl(upgrade(cur, url));
     }
 
@@ -2469,8 +2504,8 @@ public class MainActivity extends Activity {
         new AlertDialog.Builder(this)
             .setTitle("⚠ Dangerous site blocked")
             .setMessage("“" + host + "” looks like a phishing or scam site. Opening it could steal your passwords or money.\n\nGo back to safety?")
-            .setPositiveButton("Back to safety", new DialogInterface.OnClickListener() { public void onClick(DialogInterface d, int w) { if (cur != null && cur.wv.canGoBack()) cur.wv.goBack(); else if (cur != null) cur.wv.loadUrl(HOME); } })
-            .setNegativeButton("Open anyway (unsafe)", new DialogInterface.OnClickListener() { public void onClick(DialogInterface d, int w) { if (cur != null) { cur.lastTap = System.currentTimeMillis(); String old = sp.getString("safebrowse_skip", ""); sp.edit().putString("safebrowse_skip", url).apply(); cur.wv.loadUrl(url); } } })
+            .setPositiveButton("Back to safety", new DialogInterface.OnClickListener() { public void onClick(DialogInterface d, int w) { /* the dangerous page was never opened: just stay where you are (a blank new tab goes Home) */ if (cur != null && (cur.url == null || cur.url.isEmpty() || cur.url.startsWith("about:"))) cur.wv.loadUrl(HOME); } })
+            .setNegativeButton("Open anyway (unsafe)", new DialogInterface.OnClickListener() { public void onClick(DialogInterface d, int w) { if (cur != null) { cur.lastTap = System.currentTimeMillis(); cur.pageHost = null; cur.navOkUntil = System.currentTimeMillis() + 8000; cur.wv.loadUrl(url); } } })
             .show();
     }
 
@@ -2544,9 +2579,34 @@ public class MainActivity extends Activity {
     }
 
     /** Biometric / device-credential lock shown over the app when app-lock is enabled. */
-    private boolean unlocked = false;
+    private boolean unlocked = false, lockPrompting = false;
+    private View lockCover;
+    /** Opaque cover over the whole app while it is locked, so nothing can be read or tapped behind the unlock prompt. */
+    private void showLockCover(boolean show) {
+        try {
+            if (root == null) return;
+            if (!show) { if (lockCover != null && lockCover.getParent() != null) root.removeView(lockCover); return; }
+            if (lockCover == null) {
+                LinearLayout l = new LinearLayout(this);
+                l.setOrientation(LinearLayout.VERTICAL); l.setGravity(Gravity.CENTER);
+                l.setBackgroundColor(0xFF0B0B0E); l.setClickable(true); l.setElevation(dp(40));
+                TextView a = new TextView(this); a.setText("\uD83D\uDD12"); a.setTextSize(44); a.setGravity(Gravity.CENTER);
+                TextView b = new TextView(this); b.setText("Video Plus Browser is locked"); b.setTextColor(Color.WHITE); b.setTextSize(17); b.setGravity(Gravity.CENTER); b.setPadding(0, dp(14), 0, dp(18));
+                TextView u = new TextView(this); u.setText("Unlock"); u.setTextColor(0xFF1A1405); u.setTextSize(16); u.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+                GradientDrawable g = new GradientDrawable(); g.setColor(0xFFE2B33C); g.setCornerRadius(dp(24)); u.setBackground(g);
+                u.setPadding(dp(34), dp(12), dp(34), dp(12));
+                u.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { appLockGate(); } });
+                l.addView(a); l.addView(b); l.addView(u, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                lockCover = l;
+            }
+            if (lockCover.getParent() == null) root.addView(lockCover, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+            lockCover.bringToFront();
+        } catch (Throwable e) { /* ignore */ }
+    }
     private void appLockGate() {
-        if (unlocked || !sp.getBoolean("applock", false)) { unlocked = true; return; }
+        if (unlocked || !sp.getBoolean("applock", false)) { unlocked = true; showLockCover(false); return; }
+        showLockCover(true);
+        if (lockPrompting) return;
         try {
             // Framework BiometricPrompt (API 28+) works with a plain Activity; it falls back to device PIN/pattern.
             android.hardware.biometrics.BiometricPrompt.Builder b = new android.hardware.biometrics.BiometricPrompt.Builder(this)
@@ -2556,15 +2616,19 @@ public class MainActivity extends Activity {
                 android.hardware.biometrics.BiometricManager.Authenticators.BIOMETRIC_WEAK | android.hardware.biometrics.BiometricManager.Authenticators.DEVICE_CREDENTIAL);
             else b.setDeviceCredentialAllowed(true);
             android.hardware.biometrics.BiometricPrompt bp = b.build();
+            lockPrompting = true;
             bp.authenticate(new android.os.CancellationSignal(), getMainExecutor(),
                 new android.hardware.biometrics.BiometricPrompt.AuthenticationCallback() {
-                    @Override public void onAuthenticationSucceeded(android.hardware.biometrics.BiometricPrompt.AuthenticationResult r) { unlocked = true; }
+                    @Override public void onAuthenticationSucceeded(android.hardware.biometrics.BiometricPrompt.AuthenticationResult r) { lockPrompting = false; unlocked = true; showLockCover(false); }
                     @Override public void onAuthenticationError(int code, CharSequence msg) {
-                        // User-cancel (10), negative-button (13) or system-cancel (5): close the app rather than leaving it open unlocked.
-                        if (code == 10 || code == 13 || code == 5) finish();
+                        lockPrompting = false;
+                        // The phone has no fingerprint / PIN / hardware at all (11, 12, 14): app lock cannot work, so don't trap the user out.
+                        if (code == 11 || code == 12 || code == 14) { unlocked = true; showLockCover(false); toast("App lock needs a screen lock or fingerprint set up on this phone"); return; }
+                        // User pressed back / cancel (10, 13): close the app. Anything else (lockout, timeout, system cancel): stay locked behind the cover.
+                        if (code == 10 || code == 13) finish();
                     }
                 });
-        } catch (Throwable e) { unlocked = true; }
+        } catch (Throwable e) { lockPrompting = false; unlocked = true; showLockCover(false); }
     }
 
     private void showMenu(View anchor) {
@@ -2909,7 +2973,7 @@ public class MainActivity extends Activity {
         /* the page is deliberately NOT paused, so audio keeps playing in the background */
         setBg(true);
         // re-lock when the app goes to background (but not when a Custom Tab sign-in is in progress)
-        if (sp.getBoolean("applock", false) && System.currentTimeMillis() - lastCustomTab > 5000) unlocked = false;
+        if (sp.getBoolean("applock", false) && System.currentTimeMillis() - lastCustomTab > 5000 && !isInPictureInPictureMode()) { unlocked = false; showLockCover(true); /* also hides the page in the recent-apps preview */ }
     }
 
     @Override protected void onResume() {

@@ -28,11 +28,10 @@
   // 2) offer to fill saved credentials when a password field exists
   function offerFill() {
     var ps = pfields(); if (!ps.length) return;
-    var raw = '[]'; try { raw = VPApp.pwGet(); } catch (e) {}
-    var creds; try { creds = JSON.parse(raw); } catch (e) { creds = []; }
-    if (!creds.length) return;
+    // The app tells the page only THAT a login is saved (and its user name). The password itself is put in by the app when you tap Fill.
+    if (typeof window.__vpPwHas !== 'string') return;
     if (document.getElementById('__vpPwBar')) return;
-    var c = creds[0];
+    var c = { u: window.__vpPwHas };
     var bar = document.createElement('div');
     bar.id = '__vpPwBar';
     bar.style.cssText = 'position:fixed;left:10px;right:10px;bottom:14px;z-index:2147483646;background:#1c1c24;color:#fff;border:1px solid #E2B33C;border-radius:12px;padding:10px 12px;display:flex;align-items:center;gap:10px;font:14px sans-serif;box-shadow:0 6px 24px rgba(0,0,0,.5)';
@@ -40,10 +39,7 @@
     tx.textContent = 'Fill saved login' + (c.u ? ' (' + c.u + ')' : '') + '?';
     var fill = document.createElement('button'); fill.textContent = 'Fill'; fill.style.cssText = 'background:#E2B33C;color:#1a1405;border:0;border-radius:8px;padding:8px 14px;font-weight:700';
     var no = document.createElement('button'); no.textContent = '✕'; no.style.cssText = 'background:none;color:#aaa;border:0;font-size:16px;padding:4px 8px';
-    fill.onclick = function () {
-      var ps2 = pfields(); if (ps2.length) { setVal(ps2[0], c.p); var u = userFor(ps2[0]); var uf = findUser(ps2[0]); if (uf) setVal(uf, c.u); }
-      bar.remove();
-    };
+    fill.onclick = function () { try { VPApp.pwFill(); } catch (e) {} bar.remove(); };
     no.onclick = function () { bar.remove(); };
     bar.appendChild(tx); bar.appendChild(fill); bar.appendChild(no);
     document.body.appendChild(bar);
@@ -61,6 +57,10 @@
       el.dispatchEvent(new Event('change', { bubbles: true }));
     } catch (e) { el.value = v; }
   }
+  window.__vpPwDoFill = function (u, p) {
+    var ps2 = pfields(); if (!ps2.length) return;
+    setVal(ps2[0], p); var uf = findUser(ps2[0]); if (uf && u) setVal(uf, u);
+  };
   var tries = 0;
   (function wait() { if (pfields().length) { offerFill(); return; } if (++tries < 20) setTimeout(wait, 400); })();
 })();

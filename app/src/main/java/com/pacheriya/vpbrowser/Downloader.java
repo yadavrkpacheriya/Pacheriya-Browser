@@ -41,22 +41,61 @@ final class Downloader {
     static class Task {
         String id, name, url, ua, ref;
         long total, done;
-        volatile boolean paused, cancelled, running, finished;
+        volatile boolean paused, cancelled, running, finished, queued;
         int notifId;
         java.io.File out;
+        long[] cs, ce, cp;   // per-part start / end / next-byte position, so a resume continues every part exactly where it stopped
     }
     static final java.util.LinkedHashMap<String, Task> TASKS = new java.util.LinkedHashMap<>();
     private static final java.util.concurrent.atomic.AtomicInteger ACTIVE = new java.util.concurrent.atomic.AtomicInteger(0);
     private static final int MAX_CONCURRENT = 3;          // queue: run up to 3 at once (1DM default-ish)
     private static final java.util.ArrayDeque<Runnable> QUEUE = new java.util.ArrayDeque<>();
 
-    static synchronized void pause(String id)  { Task t = TASKS.get(id); if (t != null) t.paused = true; }
-    static synchronized void resume(String id, Context c) {
-        Task t = TASKS.get(id); if (t == null || t.running || t.finished) return;
-        t.paused = false; t.cancelled = false;
-        startParallel(c, t);   // resumes from t.done via range requests
+    static synchronized void pause(String id)  { Task t = TASKS.get(id); if (t != null && !t.finished) t.paused = true; }
+    /** Resume a paused task. Safe to call from the main thread (notification button): the network work runs on a worker. */
+    static void resume(final String id, final Context c) {
+        final Task t;
+        synchronized (Downloader.class) {
+            t = TASKS.get(id);
+            if (t == null || t.running || t.queued || t.finished) return;
+            t.paused = false; t.cancelled = false; t.queued = true;
+        }
+        final Context app = c.getApplicationContext();
+        new Thread(new Runnable() { public void run() {
+            if (!startParallel(app, t)) { t.queued = false; t.paused = true; notifyState(app, t); toast(app, "Could not resume - check the connection and tap Resume again"); }
+        } }).start();
     }
-    static synchronized void cancel(String id) { Task t = TASKS.get(id); if (t != null) { t.cancelled = true; t.paused = false; } }
+    static void cancel(String id) { cancel(id, null); }
+    static void cancel(String id, Context c) {
+        Task t;
+        synchronized (Downloader.class) {
+            t = TASKS.get(id); if (t == null) return;
+            t.cancelled = true; t.paused = false;
+            if (t.running || t.queued) return;   // the worker sees the flag and cleans up itself
+            TASKS.remove(id);
+        }
+        // paused / failed task with no worker: clean up here
+        try { if (t.out != null) t.out.delete(); } catch (Throwable e) {}
+        if (c != null) try { ((NotificationManager) c.getSystemService(Context.NOTIFICATION_SERVICE)).cancel(t.notifId); } catch (Throwable e) {}
+    }
+    /** Progress / paused notification with Pause-Resume and Cancel buttons. */
+    private static void notifyState(Context c, Task t) {
+        try {
+            NotificationManager nm = (NotificationManager) c.getSystemService(Context.NOTIFICATION_SERVICE);
+            try { nm.createNotificationChannel(new NotificationChannel("dl", "Downloads", NotificationManager.IMPORTANCE_LOW)); } catch (Throwable e) {}
+            Intent pi = new Intent(c, DlActionReceiver.class).setAction(t.paused ? "resume" : "pause").putExtra("id", t.id);
+            Intent ci = new Intent(c, DlActionReceiver.class).setAction("cancel").putExtra("id", t.id);
+            int fl = android.os.Build.VERSION.SDK_INT >= 31 ? android.app.PendingIntent.FLAG_IMMUTABLE : 0;
+            android.app.PendingIntent pp = android.app.PendingIntent.getBroadcast(c, t.notifId, pi, android.app.PendingIntent.FLAG_UPDATE_CURRENT | fl);
+            android.app.PendingIntent cp = android.app.PendingIntent.getBroadcast(c, t.notifId + 1, ci, android.app.PendingIntent.FLAG_UPDATE_CURRENT | fl);
+            Notification n = new Notification.Builder(c, "dl").setSmallIcon(android.R.drawable.stat_sys_download)
+                .setContentTitle(t.name)
+                .setContentText((t.done / 1048576) + " / " + (t.total / 1048576) + " MB" + (t.paused ? " - paused" : " (32 parts)"))
+                .setProgress(100, (int) (t.done * 100 / Math.max(1, t.total)), false).setOngoing(!t.paused)
+                .addAction(0, t.paused ? "Resume" : "Pause", pp).addAction(0, "Cancel", cp).build();
+            nm.notify(t.notifId, n);
+        } catch (Throwable e) {}
+    }
     static synchronized String tasksJson() {
         StringBuilder b = new StringBuilder("[");
         boolean first = true;
@@ -141,77 +180,89 @@ final class Downloader {
             if (pc != 206) return false; // no range support → caller falls back to system downloader
         } catch (Throwable e) { return false; }
 
+        t.queued = true;
         enqueue(new Runnable() { public void run() {
             final int N = 32;
             final NotificationManager nm = (NotificationManager) c.getSystemService(Context.NOTIFICATION_SERVICE);
             try { nm.createNotificationChannel(new NotificationChannel("dl", "Downloads", NotificationManager.IMPORTANCE_LOW)); } catch (Throwable e) {}
             java.util.concurrent.ExecutorService pool = null;
+            java.io.RandomAccessFile rafc = null;
             try {
+                t.queued = false;
+                if (t.cancelled) { if (t.out != null) t.out.delete(); nm.cancel(t.notifId); synchronized (Downloader.class) { TASKS.remove(t.id); } return; }
+                if (t.paused) { notifyState(c, t); return; }
                 java.io.File dir = new java.io.File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "VideoPlus");
                 dir.mkdirs();
-                final java.io.File out = new java.io.File(dir, t.name);
-                t.out = out; t.running = true;
+                if (t.out == null) {
+                    // first start: never overwrite an existing file of the same name
+                    java.io.File f = new java.io.File(dir, t.name);
+                    int dot = t.name.lastIndexOf('.');
+                    String base = dot > 0 ? t.name.substring(0, dot) : t.name, ext = dot > 0 ? t.name.substring(dot) : "";
+                    for (int k = 1; f.exists() && k < 500; k++) f = new java.io.File(dir, base + " (" + k + ")" + ext);
+                    t.out = f; t.name = f.getName();
+                }
+                final java.io.File out = t.out;
+                t.running = true;
                 final java.io.RandomAccessFile raf = new java.io.RandomAccessFile(out, "rw");
+                rafc = raf;
                 if (raf.length() != t.total) raf.setLength(t.total);
-                final long startedAt = t.done;
-                final long remaining = t.total - t.done;
-                final long chunk = (remaining + N - 1) / N;
+                if (t.cs == null) {
+                    long chunk = (t.total + N - 1) / N;
+                    int cnt = (int) ((t.total + chunk - 1) / chunk);
+                    t.cs = new long[cnt]; t.ce = new long[cnt]; t.cp = new long[cnt];
+                    for (int i = 0; i < cnt; i++) { t.cs[i] = i * chunk; t.ce[i] = Math.min(t.total - 1, t.cs[i] + chunk - 1); t.cp[i] = t.cs[i]; }
+                    t.done = 0;
+                }
                 final java.util.concurrent.atomic.AtomicBoolean fail = new java.util.concurrent.atomic.AtomicBoolean(false);
-                pool = java.util.concurrent.Executors.newFixedThreadPool(Math.min(N, 32));
+                pool = java.util.concurrent.Executors.newFixedThreadPool(Math.min(t.cs.length, 32));
                 List<java.util.concurrent.Future<?>> fs = new ArrayList<java.util.concurrent.Future<?>>();
-                for (int i = 0; i < N; i++) {
-                    final long start = startedAt + i * chunk;
-                    if (start >= t.total) break;
-                    final long end = Math.min(t.total - 1, start + chunk - 1);
+                for (int i = 0; i < t.cs.length; i++) {
+                    final int ix = i;
+                    if (t.cp[ix] > t.ce[ix]) continue;   // this part is already complete
                     fs.add(pool.submit(new Runnable() { public void run() {
-                        try {
-                            HttpURLConnection h = open(t.url, t.ua, t.ref);
-                            h.setRequestProperty("Range", "bytes=" + start + "-" + end);
-                            if (h.getResponseCode() != 206) throw new Exception("no range");
-                            InputStream in = h.getInputStream();
-                            byte[] buf = new byte[65536]; long pos = start; int n;
-                            while ((n = in.read(buf)) > 0) {
-                                if (t.cancelled || t.paused) { in.close(); return; }
-                                synchronized (raf) { raf.seek(pos); raf.write(buf, 0, n); }
-                                pos += n; synchronized (t) { t.done += n; }
-                            }
-                            in.close();
-                        } catch (Exception e) { if (!t.paused && !t.cancelled) fail.set(true); }
+                        for (int attempt = 0; attempt < 3; attempt++) {
+                            if (t.cancelled || t.paused || t.cp[ix] > t.ce[ix]) return;
+                            HttpURLConnection h = null;
+                            try {
+                                h = open(t.url, t.ua, t.ref);
+                                h.setRequestProperty("Range", "bytes=" + t.cp[ix] + "-" + t.ce[ix]);
+                                if (h.getResponseCode() != 206) throw new Exception("no range");
+                                InputStream in = h.getInputStream();
+                                byte[] buf = new byte[65536]; int n;
+                                while (t.cp[ix] <= t.ce[ix] && (n = in.read(buf)) > 0) {
+                                    if (t.cancelled || t.paused) { in.close(); return; }
+                                    n = (int) Math.min(n, t.ce[ix] - t.cp[ix] + 1);
+                                    synchronized (raf) { raf.seek(t.cp[ix]); raf.write(buf, 0, n); }
+                                    t.cp[ix] += n; synchronized (t) { t.done += n; }
+                                }
+                                in.close();
+                                if (t.cp[ix] > t.ce[ix]) return;   // part finished
+                            } catch (Exception e) { /* retry below */ }
+                            finally { if (h != null) try { h.disconnect(); } catch (Throwable x) {} }
+                            try { Thread.sleep(1200L * (attempt + 1)); } catch (Exception e) { return; }
+                        }
+                        if (!t.paused && !t.cancelled && t.cp[ix] <= t.ce[ix]) fail.set(true);
                     }}));
                 }
                 // progress + pause/resume/cancel notification
-                final java.util.concurrent.ExecutorService fpool = pool;
                 new Thread(new Runnable() { public void run() {
-                    while (t.running && !fail.get()) {
-                        try {
-                            Intent pi = new Intent(c, DlActionReceiver.class).setAction(t.paused ? "resume" : "pause").putExtra("id", t.id);
-                            Intent ci = new Intent(c, DlActionReceiver.class).setAction("cancel").putExtra("id", t.id);
-                            int fl = android.os.Build.VERSION.SDK_INT >= 31 ? android.app.PendingIntent.FLAG_IMMUTABLE : 0;
-                            android.app.PendingIntent pp = android.app.PendingIntent.getBroadcast(c, t.notifId, pi, android.app.PendingIntent.FLAG_UPDATE_CURRENT | fl);
-                            android.app.PendingIntent cp = android.app.PendingIntent.getBroadcast(c, t.notifId + 1, ci, android.app.PendingIntent.FLAG_UPDATE_CURRENT | fl);
-                            Notification n = new Notification.Builder(c, "dl").setSmallIcon(android.R.drawable.stat_sys_download)
-                                .setContentTitle(out.getName())
-                                .setContentText((t.done / 1048576) + " / " + (t.total / 1048576) + " MB" + (t.paused ? " — paused" : " (32 parts)"))
-                                .setProgress(100, (int) (t.done * 100 / Math.max(1, t.total)), false).setOngoing(!t.paused)
-                                .addAction(0, t.paused ? "Resume" : "Pause", pp).addAction(0, "Cancel", cp).build();
-                            nm.notify(t.notifId, n);
-                        } catch (Throwable e) {}
+                    while (t.running) {
+                        notifyState(c, t);
                         if (t.done >= t.total || t.paused || t.cancelled) break;
                         try { Thread.sleep(700); } catch (Exception e) { break; }
                     }
                 }}).start();
                 for (java.util.concurrent.Future<?> f : fs) f.get();
                 pool.shutdownNow();
-                raf.close();
+                raf.close(); rafc = null;
                 t.running = false;
 
                 if (t.cancelled) { out.delete(); nm.cancel(t.notifId); synchronized (Downloader.class) { TASKS.remove(t.id); } return; }
-                if (t.paused) {
-                    // leave the partial file; a notification with Resume stays
+                if (t.paused) { notifyState(c, t); return; }   // partial file stays; Resume continues every part
+                if (fail.get() || t.done < t.total) { // network failure: keep it resumable and say so
+                    t.paused = true; notifyState(c, t);
+                    toast(c, "Download interrupted - tap Resume to continue");
                     return;
-                }
-                if (fail.get() || t.done < t.total) { // transient failure: mark paused so user can resume
-                    t.paused = true; return;
                 }
                 t.finished = true;
                 try { android.media.MediaScannerConnection.scanFile(c, new String[]{ out.getAbsolutePath() }, null, null); } catch (Throwable e) {}
@@ -221,7 +272,10 @@ final class Downloader {
                 toast(c, "Saved: " + out.getName());
             } catch (Throwable e) {
                 t.running = false; t.paused = true; // allow resume
+                notifyState(c, t);
             } finally {
+                t.running = false; t.queued = false;
+                if (rafc != null) try { rafc.close(); } catch (Throwable e) {}
                 if (pool != null) try { pool.shutdownNow(); } catch (Throwable e) {}
                 slotFreed();
             }
@@ -420,6 +474,8 @@ final class Downloader {
                 nm.createNotificationChannel(new NotificationChannel("dl", "Downloads", NotificationManager.IMPORTANCE_LOW));
                 final int id = nid++;
                 String title = baseName == null || baseName.isEmpty() ? "video" : baseName;
+                final java.io.File[] tmpH = new java.io.File[1];
+                final OutputStream[] osH = new OutputStream[1];
                 try {
                     String txt = getText(mediaUrl, ua, ref);
                     if (txt.contains("#EXT-X-MAP")) throw new Exception("this stream type (fMP4) is not supported yet");
@@ -450,6 +506,7 @@ final class Downloader {
                     if (fn.length() > 70) fn = fn.substring(0, 70);
                     java.io.File tmp = new java.io.File(ctx.getCacheDir(), "dl_" + System.nanoTime() + ".ts");
                     OutputStream os = new java.io.FileOutputStream(tmp);
+                    tmpH[0] = tmp; osH[0] = os;
                     final int total = segs.size();
                     final java.util.concurrent.ConcurrentHashMap<String, byte[]> keys = new java.util.concurrent.ConcurrentHashMap<String, byte[]>();
                     java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(32);
@@ -499,6 +556,9 @@ final class Downloader {
                     nm.notify(id, done);
                     toast(ctx, "Saved: " + savedAs);
                 } catch (Exception e) {
+                    // don't leave a half-written temp file filling the cache
+                    try { if (osH[0] != null) osH[0].close(); } catch (Throwable x) {}
+                    try { if (tmpH[0] != null) tmpH[0].delete(); } catch (Throwable x) {}
                     Notification err = new Notification.Builder(ctx, "dl").setSmallIcon(android.R.drawable.stat_notify_error)
                         .setContentTitle("Download failed").setContentText(String.valueOf(e.getMessage())).build();
                     nm.notify(id, err);

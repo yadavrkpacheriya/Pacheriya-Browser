@@ -174,8 +174,8 @@ function pickDone(){
  var ag=document.getElementById('again');
  ag.innerHTML='<div class="mem">Picture search matches clothing/scenes, so it often finds look-alikes, not the exact video. For the real source, prefer the <b>on-screen text</b> and <b>sound</b> options. <a href="#" id="alleng">open all engines for the best frame</a></div>';
  document.getElementById('alleng').onclick=function(ev){ev.preventDefault();if(bestBlob){uploadFrame(bestBlob,function(u){if(u&&u.indexOf('ERR:')!==0)multiEngine(u)})}};
- // auto-run the single best frame on the top engine as a starting point
- autoSearch(bestBlob,0);
+ /* (no automatic jump to a search engine here: it used to leave this page with ONE frame before the other
+    frames and the on-screen-text clues could be used) */
 }
 /* open a chooser of ALL reverse-image engines for one frame URL (so you can try each quickly) */
 function multiEngine(u){

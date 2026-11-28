@@ -27,8 +27,7 @@ import androidx.media3.ui.PlayerView;
 public class PlayerActivity extends Activity {
     private ExoPlayer player;
     private PlayerView view;
-    private float[] speeds = { 0.5f, 1f, 1.25f, 1.5f, 2f };
-    private int speedIdx = 1;
+    private android.media.audiofx.LoudnessEnhancer loud;
     private int resizeMode = 0;
     private boolean boosted = false;
 
@@ -71,6 +70,10 @@ public class PlayerActivity extends Activity {
                 } catch (Throwable x) { /* ignore */ }
                 finish();
             }
+            @Override public void onPlaybackStateChanged(int state) {
+                // Sleep timer "End of video": stop looping / close when this video finishes.
+                if (state == Player.STATE_ENDED && sleepAtEnd) { sleepAtEnd = false; try { player.setRepeatMode(Player.REPEAT_MODE_OFF); player.pause(); } catch (Throwable e) {} finish(); }
+            }
         });
 
         // Video Plus style control row
@@ -81,10 +84,6 @@ public class PlayerActivity extends Activity {
         FrameLayout.LayoutParams blp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP | Gravity.CENTER_HORIZONTAL);
         root.addView(bar, blp);
 
-        addBtn(bar, "1x", new View.OnClickListener() { public void onClick(View v) {
-            speedIdx = (speedIdx + 1) % speeds.length; player.setPlaybackParameters(new PlaybackParameters(speeds[speedIdx]));
-            ((TextView) v).setText(speeds[speedIdx] + "x");
-        }});
         addBtn(bar, "Fit", new View.OnClickListener() { public void onClick(View v) {
             resizeMode = (resizeMode + 1) % 3;
             int[] modes = { androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT, androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM, androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL };
@@ -99,7 +98,13 @@ public class PlayerActivity extends Activity {
         }});
         addBtn(bar, "Loud", new View.OnClickListener() { public void onClick(View v) {
             boosted = !boosted;
-            player.setVolume(boosted ? 1f : 1f); // ExoPlayer caps at 1.0; true boost needs an audio processor
+            // Real boost: Android's LoudnessEnhancer on the player's audio session (+12 dB).
+            try {
+                if (boosted) {
+                    if (loud == null) loud = new android.media.audiofx.LoudnessEnhancer(player.getAudioSessionId());
+                    loud.setTargetGain(1200); loud.setEnabled(true);
+                } else if (loud != null) loud.setEnabled(false);
+            } catch (Throwable e) { boosted = false; toast("Volume boost isn't available on this phone"); }
             ((TextView) v).setText(boosted ? "Loud ✓" : "Loud");
         }});
         // Playback speed (VLC/MX staple)
@@ -119,8 +124,9 @@ public class PlayerActivity extends Activity {
                 .setItems(opts, new android.content.DialogInterface.OnClickListener() {
                     public void onClick(android.content.DialogInterface d, int w) {
                         if (sleepRun != null) handler.removeCallbacks(sleepRun);
+                        sleepAtEnd = false;
                         if (mins[w] == 0) { toast("Sleep timer off"); return; }
-                        if (mins[w] == -1) { sleepAtEnd = true; toast("Will stop at end of video"); return; }
+                        if (mins[w] == -1) { sleepAtEnd = true; try { player.setRepeatMode(Player.REPEAT_MODE_OFF); } catch (Throwable e) {} toast("Will stop at end of video"); return; }
                         sleepAtEnd = false;
                         sleepRun = new Runnable() { public void run() { try { if (player != null) player.pause(); } catch (Throwable e) {} toast("Sleep timer: paused"); } };
                         handler.postDelayed(sleepRun, mins[w] * 60L * 1000L);
@@ -144,5 +150,10 @@ public class PlayerActivity extends Activity {
     }
 
     @Override protected void onPause() { super.onPause(); if (player != null) player.pause(); }
-    @Override protected void onDestroy() { super.onDestroy(); if (player != null) { player.release(); player = null; } }
+    @Override protected void onDestroy() {
+        super.onDestroy();
+        handler.removeCallbacksAndMessages(null);
+        try { if (loud != null) { loud.release(); loud = null; } } catch (Throwable e) {}
+        if (player != null) { player.release(); player = null; }
+    }
 }

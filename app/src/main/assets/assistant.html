@@ -28,7 +28,7 @@ var webCbs={},webN=0;
 function webfetch(url){return new Promise(function(res){ if(!(window.VPApp&&VPApp.webfetch)){res('');return;} var id=++webN;webCbs[id]=res;try{VPApp.webfetch(id,url)}catch(e){res('')} setTimeout(function(){if(webCbs[id]){delete webCbs[id];res('')}},25000); });}
 
 function bubble(cls,html){var d=document.createElement('div');d.className='msg '+cls;d.innerHTML=html;feed.appendChild(d);feed.scrollTop=feed.scrollHeight;return d;}
-function esc(s){return (s||'').replace(/[<>&]/g,function(c){return{'<':'&lt;','>':'&gt;','&':'&amp;'}[c]})}
+function esc(s){return (s||'').replace(/[<>&"']/g,function(c){return{'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]})}
 
 /* learn: remember questions + which domains gave the user answers they clicked */
 function learnClick(dom){var w=LS('dom',{});w[dom]=(w[dom]||0)+1;SV('dom',w);}
@@ -72,7 +72,7 @@ function answer(q){
      var html=intro;
      if(summary)html+=esc(summary)+'\n\n';
      else html+=(intro?'':'Here are the best sources I found:\n');
-     html+='<div class="src"><b>Sources</b>'+res.map(function(r){return '<a href="'+r.url+'" data-d="'+host(r.url)+'">'+esc(r.title)+'</a>'}).join('')+'</div>';
+     html+='<div class="src"><b>Sources</b>'+res.map(function(r){return '<a href="'+esc(r.url)+'" data-d="'+esc(host(r.url))+'">'+esc(r.title)+'</a>'}).join('')+'</div>';
      html+='<div class="sug">Not right? <a href="#" id="more">search the web yourself</a></div>';
      b.innerHTML=html;feed.scrollTop=feed.scrollHeight;
      Array.prototype.forEach.call(b.querySelectorAll('.src a'),function(a){a.onclick=function(){learnClick(a.dataset.d)}});
@@ -90,8 +90,8 @@ function ask(q){
    var b=bubble('ai','<span class="dots">Opening the link</span>');
    webfetch(url).then(function(t){
      if(t&&t.length>60){var lines=t.split('\n').map(function(l){return l.trim()}).filter(function(l){return l.length>30});var sum=lines.slice(0,5).join(' ');if(sum.length>700)sum=sum.slice(0,700)+'…';
-       b.innerHTML='<b>From the page:</b>\n'+esc(sum)+'\n\n<div class="sug"><a href="'+url+'">open it in the browser</a></div>';}
-     else{b.innerHTML='I couldn\'t read that page here (sites like Instagram block it). <a href="'+url+'">Open it in the browser</a> instead.';}
+       b.innerHTML='<b>From the page:</b>\n'+esc(sum)+'\n\n<div class="sug"><a href="'+esc(url)+'">open it in the browser</a></div>';}
+     else{b.innerHTML='I couldn\'t read that page here (sites like Instagram block it). <a href="'+esc(url)+'">Open it in the browser</a> instead.';}
      feed.scrollTop=feed.scrollHeight;
    });
    return;

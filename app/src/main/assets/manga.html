@@ -136,7 +136,7 @@ function otherSites(q){
  try{
   var cats=JSON.parse(VPApp.prefGet('cats')||'[]'),seen={},list=[];
   SITES.forEach(function(x){try{seen[new URL(x[1]).hostname.replace(/^www\./,'')]=1}catch(e){}});
-  cats.forEach(function(c){if(c.a||!/manga|manhwa|manhua|comic|webtoon|raw|colou?r/i.test(c.n||''))return;
+  cats.forEach(function(c){if(c.a||/paid|store/i.test(c.n||'')||!/manga|manhwa|manhua|comic|webtoon|raw|colou?r/i.test(c.n||''))return;
    (c.s||[]).forEach(function(x){var h=String(x.u||'').replace(/^https?:\/\//,'').replace(/\/.*$/,'').replace(/^www\./,'');if(!h||seen[h])return;seen[h]=1;list.push([x.t||h,h])})});
   if(list.length){
    var d=document.createElement('details');d.style.cssText='margin:0 2px 12px;background:#17171e;border-radius:10px;padding:8px 10px';

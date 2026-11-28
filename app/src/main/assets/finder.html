@@ -142,6 +142,7 @@ function showTextClues(){
  for(var i=0;i<pend;i++){ (function(b){ readFrameText(b,function(txt){ cleanName(txt).forEach(function(n){ if(all.indexOf(n)<0)all.push(n)}); if(++done>=pend)render(); }); })(frames[i].b); }
  if(pend===0)render();
  function render(){
+  AI.text=all;aiCard();
   if(!all.length){box.innerHTML='<div class="mem" style="border-color:#555">No on-screen text found. Reverse-image search (tap a frame above) or the sound options are your best bet for this clip.</div>';return;}
   box.innerHTML='<div class="fr" style="border:1px solid #E2B33C"><b>⭐ Best way to find it — text seen on screen</b><br><span style="font-size:12px;color:#9aa">Tap a word/name to find the exact movie or show it belongs to:</span><br><div style="margin-top:8px">'+
    all.slice(0,10).map(function(n){return '<a href="#" data-n="'+encodeURIComponent(n)+'" style="display:inline-block;background:#26262f;color:#E2B33C;border-radius:14px;padding:6px 11px;margin:3px;text-decoration:none;font-size:13px">'+n.replace(/</g,'&lt;')+'</a>'}).join('')+'</div>'+
@@ -215,6 +216,28 @@ function showMem(){var box=document.getElementById('mem');var h=LS('solved',[]);
 box.innerHTML='<div class="mem"><b>Found before</b> (tap to check where to watch):<br>'+h.map(function(x){return '<a href="#" data-n="'+encodeURIComponent(x.n)+'">'+x.n.replace(/</g,'&lt;')+'</a>'}).join(' &nbsp;·&nbsp; ')+'</div>';
 Array.prototype.forEach.call(box.querySelectorAll('a'),function(a){a.onclick=function(e){e.preventDefault();var n=decodeURIComponent(a.dataset.n);document.getElementById('q').value=n;svc(n);document.getElementById('q').scrollIntoView()}})}
 
+/* ---- Ask the AI assistants: builds one ready question from everything found (link, caption, hashtags, on-screen text)
+   and opens ChatGPT / Claude / Gemini / DeepSeek with it. Each one searches the web itself; you compare the answers. ---- */
+var AI={link:'',post:'',text:[]};
+function aiPrompt(){
+ var p='Help me find the ORIGINAL full video (movie, show, series or creator) that this short clip comes from. Search the web and give me: the exact title, who published it, where I can watch it, and the source links you used. If you are not sure, say so and list the best candidates instead of guessing.\n';
+ if(AI.link)p+='\nPost / clip link: '+AI.link;
+ if(AI.post)p+='\nCaption, account and hashtags of the post: '+AI.post.slice(0,600);
+ if(AI.text.length)p+='\nText seen on screen in the clip: '+AI.text.slice(0,10).join(' | ');
+ if(!AI.link&&!AI.post&&!AI.text.length)p+='\n(I will attach a screenshot from the clip.)';
+ return p;
+}
+function aiCard(){
+ var box=document.getElementById('aibox');if(!box){box=document.createElement('div');box.id='aibox';var c=document.getElementById('clues');c.parentNode.insertBefore(box,c.nextSibling);}
+ box.innerHTML='<div class="fr"><b>🤖 Ask the AI assistants</b><br><span style="font-size:12px;color:#9aa">Opens each one with a ready question built from this clip\'s link, caption and on-screen text. The question is also copied — paste it if the box is empty, and attach a frame if you like. Sign in once on each site.</span><div class="row" style="margin-top:8px"></div></div>';
+ var row=box.querySelector('.row');
+ [['ChatGPT',function(p){return 'https://chatgpt.com/?q='+encodeURIComponent(p)}],
+  ['Claude',function(p){return 'https://claude.ai/new?q='+encodeURIComponent(p)}],
+  ['Gemini',function(p){return 'https://gemini.google.com/app'}],
+  ['DeepSeek',function(p){return 'https://chat.deepseek.com/'}]
+ ].forEach(function(x){var b=document.createElement('button');b.className='b p';b.textContent=x[0];b.onclick=function(){var p=aiPrompt();try{VPApp.copyText(p);VPApp.toast('Question copied - paste it if the box is empty')}catch(e){}location.href=x[1](p)};row.appendChild(b)});
+}
+
 /* ---- clues from the post itself: caption, account and hashtags usually name the original video ---- */
 function dec(x){var t=document.createElement('textarea');t.innerHTML=x||'';return t.value}
 window.__vpMeta=function(id,j){try{showPostClues(JSON.parse(j))}catch(e){}};
@@ -230,6 +253,7 @@ function showPostClues(m){
  if(title.length>6)add('Search the post title',title.replace(/\s+on Instagram.*$/i,'').slice(0,100)+' full video');
  box.innerHTML='<div class="fr" style="border:1px solid #E2B33C"><b>⭐ From the post itself</b><br><span style="font-size:12px;color:#9aa">The account, hashtags and caption usually name the original. Tap one to search:</span><div class="cap" style="font-size:12.5px;color:#ccc;margin:8px 0;max-height:74px;overflow:auto"></div><div class="row"></div></div>';
  box.querySelector('.cap').textContent=txt.slice(0,400);
+ AI.post=txt;aiCard();
  var row=box.querySelector('.row');
  chips.forEach(function(c){var b=document.createElement('button');b.className='b p';b.textContent=c[0];b.onclick=function(){location.href='https://www.google.com/search?q='+encodeURIComponent(c[1])};row.appendChild(b)});
 }
@@ -254,6 +278,7 @@ function findByLink(){
  var link=(document.getElementById('lk').value||'').trim();
  if(!link){st.textContent='Paste a video or reel link first.';return;}
  if(!/^https?:\/\//i.test(link))link='https://'+link;
+ AI.link=link;aiCard();
  st.textContent='Reading the link…';
  resolveVideoUrl(link,function(vurl){
   if(!vurl){st.innerHTML='Couldn’t get the video from that link. It may be private or login-only. Open the post, play the video, then use “Choose the clip” above.';return;}
@@ -268,7 +293,7 @@ document.getElementById('lk').addEventListener('keydown',function(e){if(e.key===
  var h=location.hash||'';
  var mV=h.match(/[#&]vid=([^&]+)/),mL=h.match(/[#&]lnk=([^&]+)/);
  if(mV){try{var u=decodeURIComponent(mV[1]);st.textContent='Reading the shared video…';startFromVideoUrl(u);}catch(e){}}
- else if(mL){try{var lk=decodeURIComponent(mL[1]);document.getElementById('lk').value=lk;st.textContent='Reading the shared link…';resolveVideoUrl(lk,function(vurl){if(vurl)startFromVideoUrl(vurl);else st.innerHTML='Couldn’t read that shared link (may be private). Open the post, play it, then use “Choose the clip”.';});}catch(e){}}
+ else if(mL){try{var lk=decodeURIComponent(mL[1]);document.getElementById('lk').value=lk;AI.link=lk;st.textContent='Reading the shared link…';resolveVideoUrl(lk,function(vurl){if(vurl)startFromVideoUrl(vurl);else st.innerHTML='Couldn’t read that shared link (may be private). Open the post, play it, then use “Choose the clip”.';});}catch(e){}}
 })();
 
 document.getElementById('f').onchange=function(){var f=this.files[0];if(!f)return;out.innerHTML='';frames=[];bestBlob=null;lastUrl='';st.textContent='Reading the clip…';
@@ -335,5 +360,6 @@ document.getElementById('acb').onclick=function(){var q=document.getElementById(
 document.getElementById('ac').addEventListener('keydown',function(e){if(e.key==='Enter')document.getElementById('acb').click()});
 showSites();
 showMem();
+aiCard();
 </script>
 </body></html>

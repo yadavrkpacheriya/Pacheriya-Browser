@@ -2060,6 +2060,11 @@ public class MainActivity extends Activity {
             if (t.url == null || !t.url.startsWith("file:///android_asset/") || uri == null) return;
             try { getContentResolver().delete(Uri.parse(uri), null, null); } catch (Throwable e) { try { new java.io.File(Uri.parse(uri).getPath()).delete(); } catch (Throwable x) {} }
         }
+        /** Copy text for the app's own pages (finder "Ask AI" prompt). */
+        @JavascriptInterface public void copyText(String txt) {
+            if (t.url == null || !t.url.startsWith("file:///android_asset/") || txt == null) return;
+            try { ((android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE)).setPrimaryClip(android.content.ClipData.newPlainText("prompt", txt)); } catch (Throwable e) { /* ignore */ }
+        }
         @JavascriptInterface public String diag() { return (t.url != null && t.url.startsWith("file:///android_asset/")) ? Diag.report() : ""; }
         @JavascriptInterface public void diagClear() { if (t.url != null && t.url.startsWith("file:///android_asset/")) Diag.clear(); }
         @JavascriptInterface public void diagCopy(String txt) { if (t.url == null || !t.url.startsWith("file:///android_asset/")) return; try { android.content.ClipboardManager cm = (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE); cm.setPrimaryClip(android.content.ClipData.newPlainText("diagnostics", txt)); toast("Diagnostics copied - paste it to Claude"); } catch (Throwable e) { toast("Could not copy"); } }

@@ -64,7 +64,7 @@ filtrow()}
 function opt(map,sel){return Object.keys(map).map(function(k){return '<option value="'+k+'"'+(k==sel?' selected':'')+'>'+map[k]+'</option>'}).join('')}
 function filtrow(){
  var r=document.getElementById('fr');if(!r){r=document.createElement('div');r.className='filtrow';r.id='fr';$('#chips').parentNode.appendChild(r)}
- r.innerHTML='<select id="fsort">'+opt(SORTS,sortBy)+'</select><select id="fgen">'+opt(GENRES,genre)+'</select><select id="fsta">'+opt(STATS,status)+'</select><select id="fmin">'+opt(MINS,minCh)+'</select>';
+ r.innerHTML='<select id="fsort">'+opt(SORTS,sortBy)+'</select><select id="fgen">'+Object.keys(GENRES).map(function(k){var id=k===''?'':GENRES[k];return '<option value="'+id+'"'+(id==genre?' selected':'')+'>'+(k===''?'All genres':k)+'</option>'}).join('')+'</select><select id="fsta">'+opt(STATS,status)+'</select><select id="fmin">'+opt(MINS,minCh)+'</select>';
  document.getElementById('fmin').onchange=function(){minCh=+this.value||0;SV('minCh',minCh);route()};
  document.getElementById('fsort').onchange=function(){sortBy=this.value;SV('sortBy',sortBy);route()};
  document.getElementById('fgen').onchange=function(){genre=this.value;SV('genre',genre);route()};

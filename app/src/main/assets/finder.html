@@ -216,15 +216,101 @@ function showMem(){var box=document.getElementById('mem');var h=LS('solved',[]);
 box.innerHTML='<div class="mem"><b>Found before</b> (tap to check where to watch):<br>'+h.map(function(x){return '<a href="#" data-n="'+encodeURIComponent(x.n)+'">'+x.n.replace(/</g,'&lt;')+'</a>'}).join(' &nbsp;·&nbsp; ')+'</div>';
 Array.prototype.forEach.call(box.querySelectorAll('a'),function(a){a.onclick=function(e){e.preventDefault();var n=decodeURIComponent(a.dataset.n);document.getElementById('q').value=n;svc(n);document.getElementById('q').scrollIntoView()}})}
 
+/* ---- Find by DIALOGUE: listen to the clip, write out what is said (on the phone), and search those lines.
+   Movie lines are unique to the film, so this works even when the post has no caption or hashtags. ---- */
+var clipSrc=null,dlgCbs={},dlgN=0,DLG=null;
+window.__vpClip=function(id,b64){var f=dlgCbs[id];delete dlgCbs[id];if(f)f(b64||'')};
+function clipBuffer(cb){
+ if(!clipSrc){cb(null);return}
+ if(clipSrc.file){clipSrc.file.arrayBuffer().then(cb,function(){cb(null)});return}
+ if(window.VPApp&&VPApp.clipBytes){var id=++dlgN;dlgCbs[id]=function(b){if(!b){cb(null);return}try{var bin=atob(b),u=new Uint8Array(bin.length);for(var i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);cb(u.buffer)}catch(e){cb(null)}};
+  try{VPApp.clipBytes(id,clipSrc.url)}catch(e){delete dlgCbs[id];cb(null)}return}
+ cb(null);
+}
+function pcm16k(buf,cb){
+ try{var AC=window.AudioContext||window.webkitAudioContext,ac=new AC();
+  ac.decodeAudioData(buf,function(ab){
+   try{var len=Math.floor(Math.min(ab.duration,75)*16000);if(len<8000){cb(null);return}
+    var oc=new OfflineAudioContext(1,len,16000),sn=oc.createBufferSource();sn.buffer=ab;sn.connect(oc.destination);sn.start(0);
+    oc.startRendering().then(function(r){try{ac.close()}catch(e){}cb(r.getChannelData(0))},function(){cb(null)});
+   }catch(e){cb(null)}
+  },function(){cb(null)});
+ }catch(e){cb(null)}
+}
+function b64pcm(a){var n=a.length,u=new Uint8Array(n*2),s2='',C=0x8000;
+ for(var i=0;i<n;i++){var x=Math.max(-1,Math.min(1,a[i]));x=(x<0?x*32768:x*32767)|0;u[2*i]=x&255;u[2*i+1]=(x>>8)&255}
+ for(var j=0;j<u.length;j+=C)s2+=String.fromCharCode.apply(null,u.subarray(j,j+C));return btoa(s2)}
+function dlgCard(){
+ var box=document.getElementById('dlgbox');if(!box){box=document.createElement('div');box.id='dlgbox';var c=document.getElementById('clues');c.parentNode.insertBefore(box,c);}
+ box.innerHTML='<div class="fr" style="border:1px solid #E2B33C"><b>🎧 Find by dialogue</b><br><span style="font-size:12px;color:#9aa">Listens to the clip on your phone, writes out what is said, and searches those lines — the best way to find a movie scene with no caption. First use downloads the speech engine once (Wi‑Fi is better).</span><div id="dlgst" style="font-size:12.5px;color:#9a7bff;margin:8px 0 4px"></div><div class="row" id="dlgrow"><button class="b best" id="dlggo">Listen to the clip</button></div></div>';
+ document.getElementById('dlggo').onclick=dlgRun;
+}
+function dlgRun(){
+ var stEl=document.getElementById('dlgst'),btn=document.getElementById('dlggo');
+ if(!(window.VPApp&&VPApp.subInit&&VPApp.subGoT)){stEl.textContent='This needs the Video Plus Browser app.';return}
+ if(DLG&&DLG.busy)return;
+ btn.disabled=true;stEl.textContent='Reading the sound of the clip…';
+ var D=DLG={busy:true,parts:[],sent:0,lines:[],ready:false};
+ var watchdog=setTimeout(function(){if(D.busy&&!D.ready)fail('The speech engine did not start (it needs internet the first time). Tap to try again.')},180000);
+ function fail(msg){clearTimeout(watchdog);D.busy=false;btn.disabled=false;stEl.textContent=msg}
+ function next(){
+  if(D.sent>=D.parts.length){clearTimeout(watchdog);D.busy=false;btn.disabled=false;dlgShow();return}
+  stEl.textContent='Writing out the speech… part '+(D.sent+1)+' of '+D.parts.length;
+  try{VPApp.subGoT(D.sent*25,b64pcm(D.parts[D.sent]))}catch(e){fail('Could not send the sound to the speech engine.');return}
+  D.sent++;
+ }
+ window.__vpSub=function(m){
+  if(DLG!==D||!D.busy||!m)return;
+  if(m.t==='prog'){if(!D.ready)stEl.textContent='Downloading the speech engine '+m.p+'% (first time only)…'}
+  else if(m.t==='ready'){if(!D.ready){D.ready=true;next()}}
+  else if(m.t==='err')fail('Speech engine error: '+m.msg);
+  else if(m.t==='res'){
+   var got=[];(m.chunks||[]).forEach(function(c){var tx=(c.text||'').trim();if(tx.length>1)got.push(tx)});
+   if(!got.length&&m.text&&m.text.trim().length>1)got.push(m.text.trim());
+   got.forEach(function(tx){tx.split(/[.!?।]+\s+/).forEach(function(l){l=l.trim();if(l.length>1)D.lines.push(l)})});
+   next();
+  }
+ };
+ clipBuffer(function(buf){
+  if(!buf){fail('Could not read this clip\'s sound (too large, or the site blocks it). Download the video, then use “Choose the clip”.');return}
+  pcm16k(buf,function(pcm){
+   if(!pcm){fail('This clip has no readable sound track.');return}
+   var sq=0,cnt=0;for(var i=0;i<pcm.length;i+=16){sq+=pcm[i]*pcm[i];cnt++}if(Math.sqrt(sq/Math.max(1,cnt))<0.002){fail('The clip is silent, so there is no dialogue to search.');return}
+   for(var p=0;p<pcm.length;p+=16000*25){var part=pcm.slice(p,p+16000*25);if(part.length>=16000)D.parts.push(part)}
+   if(!D.parts.length){fail('The clip is too short to read speech from.');return}
+   stEl.textContent='Starting the speech engine…';
+   try{VPApp.subInit('base')}catch(e){fail('Could not start the speech engine.')}
+  });
+ });
+}
+function dlgShow(){
+ var stEl=document.getElementById('dlgst'),row=document.getElementById('dlgrow');
+ /* keep real sentences; drop noise the engine writes for music or silence */
+ var seen={},lines=DLG.lines.map(function(l){return l.replace(/\[[^\]]*\]|\([^)]*\)|♪/g,' ').replace(/\s+/g,' ').trim()}).filter(function(l){var k=l.toLowerCase();if(seen[k])return false;seen[k]=1;return l.split(' ').length>=3&&l.length>=12&&!/^(thank you|thanks for watching|subscribe)/i.test(l)});
+ if(!lines.length){stEl.textContent='No clear speech was heard in this clip (music or noise only). Try the picture or music options.';return}
+ lines.sort(function(a,b){return b.length-a.length});
+ var top=lines.slice(0,6);
+ AI.said=top;try{aiCard()}catch(e){}
+ stEl.textContent='Heard these lines — tap one to search for the scene:';
+ row.innerHTML='';
+ function q1(l){return '"'+l.replace(/["“”]/g,'').replace(/[.!?।]+$/,'')+'"'}
+ top.forEach(function(l){var b=document.createElement('button');b.className='b p';b.style.cssText='text-align:left;white-space:normal';b.textContent='“'+l+'”';
+  b.onclick=function(){location.href='https://www.google.com/search?tbm=vid&q='+encodeURIComponent(q1(l))};row.appendChild(b)});
+ var all=document.createElement('button');all.className='b best';all.textContent='Search the two longest lines together';
+ all.onclick=function(){location.href='https://www.google.com/search?q='+encodeURIComponent(top.slice(0,2).map(q1).join(' ')+' movie OR series OR scene')};row.appendChild(all);
+ var again=document.createElement('button');again.className='b';again.id='dlggo';again.textContent='Listen again';again.onclick=dlgRun;row.appendChild(again);
+}
+
 /* ---- Ask the AI assistants: builds one ready question from everything found (link, caption, hashtags, on-screen text)
    and opens ChatGPT / Claude / Gemini / DeepSeek with it. Each one searches the web itself; you compare the answers. ---- */
-var AI={link:'',post:'',text:[]};
+var AI={link:'',post:'',text:[],said:[]};
 function aiPrompt(){
  var p='Help me find the ORIGINAL full video (movie, show, series or creator) that this short clip comes from. Search the web and give me: the exact title, who published it, where I can watch it, and the source links you used. If you are not sure, say so and list the best candidates instead of guessing.\n';
  if(AI.link)p+='\nPost / clip link: '+AI.link;
  if(AI.post)p+='\nCaption, account and hashtags of the post: '+AI.post.slice(0,600);
  if(AI.text.length)p+='\nText seen on screen in the clip: '+AI.text.slice(0,10).join(' | ');
- if(!AI.link&&!AI.post&&!AI.text.length)p+='\n(I will attach a screenshot from the clip.)';
+ if(AI.said&&AI.said.length)p+='\nLines spoken in the clip: '+AI.said.map(function(l){return '"'+l+'"'}).join(' ');
+ if(!AI.link&&!AI.post&&!AI.text.length&&!(AI.said&&AI.said.length))p+='\n(I will attach a screenshot from the clip.)';
  return p;
 }
 function aiCard(){
@@ -262,7 +348,7 @@ function showPostClues(m){
 function startFromVideoUrl(vurl){
  out.innerHTML='';frames=[];bestBlob=null;lastUrl='';st.textContent='Loading the video…';
  v.crossOrigin='anonymous';
- v.src=vurl;
+ v.src=vurl;clipSrc={url:vurl};AI.said=[];dlgCard();
  v.onloadedmetadata=function(){var d=isFinite(v.duration)&&v.duration>0?v.duration:10;soundCard();grab([0.1,0.25,0.4,0.55,0.7,0.85].map(function(p){return Math.max(0.1,d*p)}),0)};
  v.onerror=function(){st.innerHTML='Could not load that video directly (the site may block it or need login). Open the post, play the video, then use “Choose the clip” above.';};
 }
@@ -297,7 +383,7 @@ document.getElementById('lk').addEventListener('keydown',function(e){if(e.key===
 })();
 
 document.getElementById('f').onchange=function(){var f=this.files[0];if(!f)return;out.innerHTML='';frames=[];bestBlob=null;lastUrl='';st.textContent='Reading the clip…';
-nameHint(f.name);
+nameHint(f.name);clipSrc={file:f};AI.said=[];dlgCard();
 v.src=URL.createObjectURL(f);v.onloadedmetadata=function(){var d=isFinite(v.duration)&&v.duration>0?v.duration:10;soundCard();grab([0.1,0.25,0.4,0.55,0.7,0.85].map(function(p){return Math.max(0.1,d*p)}),0)};
 v.onerror=function(){st.textContent='This file could not be read as a video. Try another clip.'}};
 

@@ -10,11 +10,11 @@ window.__init=async function(model){
     cur=model;SubApp.ready();
   }catch(e){asr=null;SubApp.err(String((e&&e.message)||e))}
 };
-window.__go=async function(t0,b64){
+window.__go=async function(t0,b64,task){
   try{
     var bin=atob(b64),n=bin.length>>1,a=new Float32Array(n);
     for(var i=0;i<n;i++){var v=bin.charCodeAt(2*i)|(bin.charCodeAt(2*i+1)<<8);if(v>32767)v-=65536;a[i]=v/32768}
-    var t1=Date.now(),o=await asr(a,{task:'translate',return_timestamps:true});
+    var t1=Date.now(),o=await asr(a,{task:task||'translate',return_timestamps:true});
     SubApp.res(JSON.stringify({t:'res',t0:t0,dur:n/16000,ms:Date.now()-t1,chunks:o.chunks||[],text:o.text||''}));
   }catch(e){SubApp.err(String((e&&e.message)||e))}
 };

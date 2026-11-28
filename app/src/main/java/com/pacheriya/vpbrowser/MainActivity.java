@@ -1760,6 +1760,38 @@ public class MainActivity extends Activity {
         @JavascriptInterface public void subGo(final double t0, final String b64) {
             ui.post(new Runnable() { public void run() { subTab = t; subCall("go", t0 + ",'" + b64 + "'"); } });
         }
+        /** Finder "dialogue search": same speech engine, but writes the words in the clip's own language (no translation). Own pages only. */
+        @JavascriptInterface public void subGoT(final double t0, final String b64) {
+            if (t.url == null || !t.url.startsWith("file:///android_asset/") || b64 == null || !b64.matches("[A-Za-z0-9+/=]*")) return;
+            ui.post(new Runnable() { public void run() { subTab = t; subCall("go", t0 + ",'" + b64 + "','transcribe'"); } });
+        }
+        /** Hand the finder page the bytes of a shared clip (content:// uri) or a direct video link, so it can read the sound track. Own pages only, max 16 MB. */
+        @JavascriptInterface public void clipBytes(final int id, final String src) {
+            if (t.url == null || !t.url.startsWith("file:///android_asset/") || src == null) return;
+            final WebView wv = t.wv;
+            new Thread(new Runnable() { public void run() {
+                String out = "";
+                java.io.InputStream in = null;
+                try {
+                    if (src.startsWith("content://")) in = getContentResolver().openInputStream(Uri.parse(src));
+                    else if (src.startsWith("https://") || src.startsWith("http://")) {
+                        java.net.HttpURLConnection c = (java.net.HttpURLConnection) new java.net.URL(src).openConnection();
+                        c.setConnectTimeout(10000); c.setReadTimeout(20000); c.setInstanceFollowRedirects(true);
+                        c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/131 Mobile Safari/537.36");
+                        if (c.getResponseCode() < 400) in = c.getInputStream();
+                    }
+                    if (in != null) {
+                        java.io.ByteArrayOutputStream bo = new java.io.ByteArrayOutputStream();
+                        byte[] b = new byte[65536]; int n; boolean big = false;
+                        while ((n = in.read(b)) > 0) { bo.write(b, 0, n); if (bo.size() > 16 * 1024 * 1024) { big = true; break; } }
+                        if (!big) out = android.util.Base64.encodeToString(bo.toByteArray(), android.util.Base64.NO_WRAP);
+                    }
+                } catch (Throwable e) { out = ""; }
+                finally { try { if (in != null) in.close(); } catch (Throwable e) {} }
+                final String fo = out;
+                ui.post(new Runnable() { public void run() { try { wv.evaluateJavascript("window.__vpClip&&window.__vpClip(" + id + ",'" + fo + "')", null); } catch (Throwable e) {} } });
+            } }).start();
+        }
         @JavascriptInterface public float getVol() {
             try { android.media.AudioManager am = (android.media.AudioManager) getSystemService(AUDIO_SERVICE); return am.getStreamVolume(android.media.AudioManager.STREAM_MUSIC) / (float) am.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC); } catch (Throwable e) { return -1f; }
         }

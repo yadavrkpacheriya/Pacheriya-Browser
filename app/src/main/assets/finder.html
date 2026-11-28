@@ -81,6 +81,17 @@ var ENG=[
  ['TinEye',function(u){return 'https://tineye.com/search?url='+encodeURIComponent(u)}],
  ['Web (image)',function(u){return 'https://www.google.com/searchbyimage?image_url='+encodeURIComponent(u)+'&hl=en'}]
 ];
+/* Google Lens: hand the picture STRAIGHT to Google (the same upload form Chrome's own "search by image" uses).
+   No temporary image host in between - that step was failing, which left Lens with a blank picture. */
+function lensDirect(blob){
+ try{
+  var fm=document.createElement('form');fm.method='POST';fm.enctype='multipart/form-data';fm.action='https://lens.google.com/v3/upload?hl=en&st='+Date.now();fm.style.display='none';
+  var inp=document.createElement('input');inp.type='file';inp.name='encoded_image';
+  var dt=new DataTransfer();dt.items.add(new File([blob],'image.jpg',{type:'image/jpeg'}));inp.files=dt.files;
+  if(!inp.files||!inp.files.length)return false;
+  fm.appendChild(inp);document.body.appendChild(fm);fm.submit();return true;
+ }catch(e){return false}
+}
 function card(blob){
  var d=document.createElement('div');d.className='fr';
  var im=document.createElement('img');im.src=URL.createObjectURL(blob);d.appendChild(im);
@@ -90,6 +101,7 @@ function card(blob){
  var urlCache='';
  function run(name,mk){
    bump(name);
+   if(name==='Google Lens'&&lensDirect(blob)){msg.textContent='Opening Google Lens with this picture…';return}
    if(urlCache){ location.href=mk(urlCache); return; }
    msg.textContent='Uploading this picture, then searching…';
    btns.forEach(function(b){b.disabled=true});
@@ -169,21 +181,28 @@ function pickDone(){
   var im=document.createElement('img');im.src=URL.createObjectURL(fr.b);im.style.cssText='width:100%;aspect-ratio:16/10;object-fit:cover;display:block;cursor:pointer';
   cell.appendChild(im);grid.appendChild(cell);
   // upload each frame in parallel; store its URL on the element
-  uploadFrame(fr.b,function(u){upped++;if(u&&u.indexOf('ERR:')!==0){fr.url=u;im.onclick=function(){multiEngine(u)};}else{im.style.opacity='.4';}
+  im.onclick=function(){multiEngine(fr.url||'',fr.b)};   // works at once: Google Lens needs no upload to a third site
+  uploadFrame(fr.b,function(u){upped++;if(u&&u.indexOf('ERR:')!==0){fr.url=u;}
     if(upped===pick.length)st.innerHTML='Tap a frame to search it. Best clue: use any <b>on-screen text</b> below — it finds the movie far better than the picture.';});
  });
  var ag=document.getElementById('again');
  ag.innerHTML='<div class="mem">Picture search matches clothing/scenes, so it often finds look-alikes, not the exact video. For the real source, prefer the <b>on-screen text</b> and <b>sound</b> options. <a href="#" id="alleng">open all engines for the best frame</a></div>';
- document.getElementById('alleng').onclick=function(ev){ev.preventDefault();if(bestBlob){uploadFrame(bestBlob,function(u){if(u&&u.indexOf('ERR:')!==0)multiEngine(u)})}};
+ document.getElementById('alleng').onclick=function(ev){ev.preventDefault();if(bestBlob)multiEngine('',bestBlob)};
  /* (no automatic jump to a search engine here: it used to leave this page with ONE frame before the other
     frames and the on-screen-text clues could be used) */
 }
 /* open a chooser of ALL reverse-image engines for one frame URL (so you can try each quickly) */
-function multiEngine(u){
+function multiEngine(u,blob){
  var box=document.getElementById('engpick');if(!box){box=document.createElement('div');box.id='engpick';out.insertBefore(box,out.firstChild);}
- box.innerHTML='<div class="fr"><b>Search this frame on:</b><div class="row" style="margin-top:8px"></div></div>';
- var row=box.querySelector('.row');
- ENG.forEach(function(e){var b=document.createElement('button');b.className='b p';b.textContent=e[0];b.onclick=function(){bump(e[0]);location.href=e[1](u)};row.appendChild(b)});
+ box.innerHTML='<div class="fr"><b>Search this frame on:</b><div class="row" style="margin-top:8px"></div><div class="em" style="font-size:12.5px;color:#9a7bff;margin-top:6px"></div></div>';
+ var row=box.querySelector('.row'),em=box.querySelector('.em');
+ order(ENG).forEach(function(e,idx){var b=document.createElement('button');b.className='b'+(idx===0?' best':' p');b.textContent=e[0];b.onclick=function(){bump(e[0]);
+   if(e[0]==='Google Lens'&&blob&&lensDirect(blob)){em.textContent='Opening Google Lens with this picture…';return}
+   if(u){location.href=e[1](u);return}
+   if(!blob)return;
+   em.textContent='Uploading this picture, then searching…';
+   uploadFrame(blob,function(x){if(x&&x.indexOf('ERR:')!==0){u=x;location.href=e[1](x)}else em.textContent='Upload failed on this network. Google Lens does not need the upload — use that.'})};
+  row.appendChild(b)});
  box.scrollIntoView({behavior:'smooth'});
 }
 /* upload the best frame once, then open the chosen reverse-image engine straight on its results */

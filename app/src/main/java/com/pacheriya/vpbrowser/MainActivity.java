@@ -1242,6 +1242,7 @@ public class MainActivity extends Activity {
 
     @Override protected void onActivityResult(int req, int res, Intent data) {
         super.onActivityResult(req, res, data);
+        if (req == 9001) { lockPrompting = false; if (res == RESULT_OK) { unlocked = true; showLockCover(false); } else finish(); return; }
         if (req == 77 && fileCb != null) {
             Uri[] out = null;
             if (res == RESULT_OK) {
@@ -1445,7 +1446,7 @@ public class MainActivity extends Activity {
                 in.addCategory(Intent.CATEGORY_BROWSABLE);
                 in.setComponent(null);
                 in.setSelector(null);
-                if (in.resolveActivity(getPackageManager()) != null) { startActivity(in); return true; }
+                try { startActivity(in); return true; } catch (android.content.ActivityNotFoundException nf) { /* app not installed: use the fallback below */ }
                 String fb = in.getStringExtra("browser_fallback_url");
                 if (fb != null && fb.startsWith("http")) { v.loadUrl(fb); return true; }
                 String pkg = in.getPackage();
@@ -1617,8 +1618,8 @@ public class MainActivity extends Activity {
                         case 7: {
                             boolean on = !sp.getBoolean("applock", false);
                             sp.edit().putBoolean("applock", on).apply();
-                            if (on) { unlocked = false; appLockGate(); toast("App lock on: fingerprint/PIN needed to open"); }
-                            else toast("App lock off");
+                            if (on) { unlocked = false; toast("App lock on: fingerprint/PIN needed to open"); appLockGate(); return; }
+                            toast("App lock off");
                             break;
                         }
                         case 8: {
@@ -2628,7 +2629,18 @@ public class MainActivity extends Activity {
                         if (code == 10 || code == 13) finish();
                     }
                 });
-        } catch (Throwable e) { lockPrompting = false; unlocked = true; showLockCover(false); }
+        } catch (Throwable e) {
+            lockPrompting = false;
+            Diag.log("APPLOCK", String.valueOf(e));
+            // Never open the app just because the fingerprint prompt failed: fall back to the phone's own PIN / pattern screen.
+            try {
+                android.app.KeyguardManager km = (android.app.KeyguardManager) getSystemService(Context.KEYGUARD_SERVICE);
+                Intent ci = km == null ? null : km.createConfirmDeviceCredentialIntent("Unlock Video Plus Browser", "Verify it's you to continue");
+                if (ci != null) { lockPrompting = true; startActivityForResult(ci, 9001); return; }
+            } catch (Throwable x) { /* fall through */ }
+            unlocked = true; showLockCover(false);
+            toast("App lock needs a screen lock or fingerprint set up on this phone");
+        }
     }
 
     private void showMenu(View anchor) {
@@ -2973,7 +2985,7 @@ public class MainActivity extends Activity {
         /* the page is deliberately NOT paused, so audio keeps playing in the background */
         setBg(true);
         // re-lock when the app goes to background (but not when a Custom Tab sign-in is in progress)
-        if (sp.getBoolean("applock", false) && System.currentTimeMillis() - lastCustomTab > 5000 && !isInPictureInPictureMode()) { unlocked = false; showLockCover(true); /* also hides the page in the recent-apps preview */ }
+        if (sp.getBoolean("applock", false) && System.currentTimeMillis() - lastCustomTab > 5000 && !isInPictureInPictureMode() && !lockPrompting) { unlocked = false; showLockCover(true); /* also hides the page in the recent-apps preview */ }
     }
 
     @Override protected void onResume() {

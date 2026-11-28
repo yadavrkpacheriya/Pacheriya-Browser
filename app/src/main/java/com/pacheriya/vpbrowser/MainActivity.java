@@ -229,7 +229,7 @@ public class MainActivity extends Activity {
     private boolean autoPrev = true;
     private String readerJs = "", pwJs = "";
     private String autoTr = "";
-    private String injected = "", defaultUa = "", desktopUa = "", UA_EDGE = "", UA_IE = "", UA_FF = "", authUa = "";
+    private String injected = "", defaultUa = "", desktopUa = "", UA_EDGE = "", UA_IE = "", UA_FF = "", authUa = "", camUa = "";
     private androidx.webkit.WebViewAssetLoader assetLoader;
     private final java.util.Map<String,String> pdfProxy = new java.util.concurrent.ConcurrentHashMap<String,String>();
     private int uaMode = 0; // 0 default,1 desktop chrome,2 edge,3 IE11,4 firefox
@@ -328,6 +328,8 @@ public class MainActivity extends Activity {
         authUa = "Mozilla/5.0 (Linux; Android 14; Pixel 8a) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/" + cv + " Mobile Safari/537.36";
         UA_EDGE = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/" + cv + " Safari/537.36 Edg/" + cv;
         UA_IE = "Mozilla/5.0 (Windows NT 10.0; WOW64; Trident/7.0; rv:11.0) like Gecko";
+        // Old-Chrome UA that XMEye / Hikvision / Dahua DVR web pages demand ("download 44.0 or earlier"); auto-used on LAN IPs.
+        camUa = "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/44.0.2403.157 Safari/537.36";
         UA_FF = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0";
         uaMode = sp.getInt("uamode", 0);
 
@@ -938,7 +940,11 @@ public class MainActivity extends Activity {
                 // Present a clean Chrome UA on sign-in hosts so Google/Microsoft accept the in-app WebView (no other browser needed).
                 try {
                     String h0 = Uri.parse(u).getHost();
-                    String want = (h0 != null && isAuthHost(h0.toLowerCase())) ? authUa : uaFor(t.uaMode >= 0 ? t.uaMode : uaMode);
+                    String want;
+                    if (h0 != null && isAuthHost(h0.toLowerCase())) want = authUa;
+                    // Local camera/DVR/router IP and the user hasn't forced an identity for this tab → pretend to be old Chrome 44 so XMEye-type pages work.
+                    else if (t.uaMode < 0 && isLocalHost(h0)) want = camUa;
+                    else want = uaFor(t.uaMode >= 0 ? t.uaMode : uaMode);
                     if (!want.equals(v.getSettings().getUserAgentString())) v.getSettings().setUserAgentString(want);
                 } catch (Throwable ig) {}
                 // A pop-under tab whose first page is an ad / throwaway host: close it on sight.
@@ -1473,6 +1479,14 @@ public class MainActivity extends Activity {
         switch (m) { case 1: return desktopUa; case 2: return UA_EDGE; case 3: return UA_IE; case 4: return UA_FF; default: return defaultUa; }
     }
 
+    /** True for a private LAN address (camera / DVR / router / NAS): 192.168.x, 10.x, 172.16-31.x, or a bare hostname. */
+    private boolean isLocalHost(String h) {
+        if (h == null) return false;
+        if (h.startsWith("192.168.") || h.startsWith("10.") || h.equals("localhost")) return true;
+        if (h.startsWith("172.")) { try { int o = Integer.parseInt(h.split("\\.")[1]); if (o >= 16 && o <= 31) return true; } catch (Exception e) {} }
+        return false;
+    }
+
     private long lastCustomTab = 0;
     /** Identity-provider sign-in hosts that block the default WebView UA. */
     private boolean isAuthHost(String host) {
@@ -1511,7 +1525,10 @@ public class MainActivity extends Activity {
         WebSettings s = t.wv.getSettings();
         int m = t.uaMode >= 0 ? t.uaMode : uaMode;
         boolean deskLayout = m != 0;
-        s.setUserAgentString(uaFor(m));
+        // IE/camera mode on a LAN device → old Chrome 44 UA (what XMEye/Dahua/Hikvision pages actually want).
+        String host = null; try { host = Uri.parse(t.url == null ? "" : t.url).getHost(); } catch (Throwable e) {}
+        if (m == 3 && isLocalHost(host)) s.setUserAgentString(camUa);
+        else s.setUserAgentString(uaFor(m));
         s.setLoadWithOverviewMode(deskLayout);
     }
 
@@ -2589,10 +2606,12 @@ public class MainActivity extends Activity {
 
         /* collapsible groups */
         boolean desktop = cur != null && (cur.uaMode >= 0 ? cur.uaMode : uaMode) == 1;
+        boolean ieOn = cur != null && cur.uaMode == 3;
         addGroup(pop, box, "\uD83D\uDCC4", "This page", new Object[][]{
             {"\uD83D\uDD12", "New private tab", 2}, {"\u21AA", "Share", 14}, {"\uD83D\uDD17", "Copy link", 13},
             {"\uD83D\uDD0D", "Find in page", 5}, {"\uD83D\uDCD6", "Reading mode", 19}, {"\uD83C\uDF10", "Translate page", 11},
-            {"\uD83D\uDDA5", desktop ? "Desktop site: ON" : "Desktop site", 30}, {"\u2795", "Add to Home screen", 31}
+            {"\uD83D\uDDA5", desktop ? "Desktop site: ON" : "Desktop site", 30}, {"\u2795", "Add to Home screen", 31},
+            {"\uD83D\uDCF9", ieOn ? "IE / camera mode: ON" : "Open in IE / camera mode", 33}
         });
         addGroup(pop, box, "\uD83D\uDCDA", "Library", new Object[][]{
             {"\uD83D\uDCD1", "Bookmarks", 7}, {"\uD83D\uDD53", "History", 8}, {"\u2B07", "Downloads & videos", 12}
@@ -2729,6 +2748,14 @@ public class MainActivity extends Activity {
             }
             case 31: addToHomeScreen(); break;
             case 32: setAsDefaultBrowser(); break;
+            case 33: { // Toggle IE / camera mode for this tab (for DVR/camera pages that demand an old browser)
+                if (cur != null) {
+                    cur.uaMode = (cur.uaMode == 3) ? -1 : 3;
+                    applyUa(cur); cur.wv.reload();
+                    toast(cur.uaMode == 3 ? "IE / camera mode on — old-browser camera pages should work now" : "Normal mode");
+                }
+                break;
+            }
         }
     }
 

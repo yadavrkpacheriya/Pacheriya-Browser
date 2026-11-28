@@ -60,44 +60,35 @@
     ast.textContent = 'ins.adsbygoogle,[class~="adsbygoogle"],[id^="google_ads"],iframe[src*="doubleclick"],iframe[src*="googlesyndication"],iframe[src*="exoclick"],iframe[src*="juicyads"],iframe[src*="trafficjunky"],iframe[src*="adsterra"],iframe[src*="popads"],[class~="ad-banner"],[class~="ads-container"],[class*="adsbox"],[class*="ad-slot"],[class*="ad-container"],[class*="ad-wrapper"],[class*="advertisement"],[id*="ad-slot"],[id*="ad-container"],[data-ad],[data-ad-slot],.google-auto-placed,.adsbygoogle-noablate{display:none!important;height:0!important;min-height:0!important}';
     document.documentElement.appendChild(ast);
 
-    /* ---- ensure every video has visible play/pause controls, and pause autoplay that slips through ---- */
+    /* ---- block autoplay + give every video play/pause controls — EVENT-DRIVEN (no polling, so it can't hang) ---- */
     var userPlayed = 0;
-    ['pointerdown','touchstart','mousedown','click'].forEach(function(ev){document.addEventListener(ev,function(){userPlayed=Date.now();},true);});
-    function ensureControls() {
-      try {
-        [].forEach.call(document.querySelectorAll('video'), function (v) {
-          if (v.__vpCtl) return; v.__vpCtl = 1;
-          // give it native controls if the site stripped them (so there's always a play/pause/seek bar)
-          if (!v.hasAttribute('controls') && !v.closest('[class*="player"],[class*="plyr"],[class*="jw"],[class*="video-js"]')) {
-            try { v.setAttribute('controls', ''); v.controls = true; } catch (e) {}
-          }
-          // if it's autoplaying without a tap, pause it so it waits for the user
-          if (!v.paused && Date.now() - userPlayed > 1500 && !v.loop) {
-            try { v.pause(); } catch (e) {}
-          }
-        });
-      } catch (e) {}
-    }
-
-    /* ---- autoplay + scroll-lock rescue: stop pages that freeze on an auto-playing video ---- */
-    // If a video starts playing on its own (not from a user tap) and the page has locked scrolling, pause+mute it
-    // and restore scrolling, so an autoplay takeover can't trap the page.
-    ensureControls();
-    try { new MutationObserver(ensureControls).observe(document.documentElement, { childList: true, subtree: true }); } catch (e) {}
-    setInterval(ensureControls, 1500);
+    ['pointerdown', 'touchstart', 'mousedown', 'click', 'keydown'].forEach(function (ev) {
+      document.addEventListener(ev, function () { userPlayed = Date.now(); }, true);
+    });
+    // The 'play' event fires the instant any video (even one added later) starts — catch autoplay right here.
     document.addEventListener('play', function (e) {
-      try {
-        var v = e.target; if (!v || v.tagName !== 'VIDEO') return;
-        if (Date.now() - userPlayed > 1500) {          // started without a recent tap → autoplay
-          // only intervene if the page looks locked (body/html overflow hidden) — don't touch normal autoplay previews
+      var v = e.target; if (!v || v.tagName !== 'VIDEO') return;
+      // give it visible controls once, if the site stripped them and it isn't inside a known player skin
+      if (!v.__vpCtl) {
+        v.__vpCtl = 1;
+        try { if (!v.closest('[class*="player"],[class*="plyr"],[class*="jw"],[class*="video-js"],[class*="shaka"]')) { v.setAttribute('controls', ''); v.controls = true; } } catch (x) {}
+      }
+      // if play wasn't started by a recent real tap, it's autoplay → pause it so it waits for you
+      if (Date.now() - userPlayed > 1200 && !v.__vpUserOk) {
+        try { v.pause(); v.muted = true; } catch (x) {}
+        // if the page locked scrolling for this autoplay takeover, free it
+        try {
           var bs = getComputedStyle(document.body), hs = getComputedStyle(document.documentElement);
-          if (bs.overflow === 'hidden' || hs.overflow === 'hidden' || bs.position === 'fixed') {
-            v.muted = true; try { v.pause(); } catch (x) {}
-            unlockScroll();
-          }
-        }
-      } catch (x) {}
+          if (bs.overflow === 'hidden' || hs.overflow === 'hidden' || bs.position === 'fixed') unlockScroll();
+        } catch (x) {}
+      }
     }, true);
+    // when the user actually taps a video, mark it OK so it can play freely from then on
+    document.addEventListener('click', function (e) {
+      try { var v = e.target && e.target.closest && e.target.closest('video'); if (v) v.__vpUserOk = 1; } catch (x) {}
+    }, true);
+    // tag any videos already present at load so the first paint gets controls (one pass, not a loop)
+    try { [].forEach.call(document.querySelectorAll('video'), function (v) { if (!v.hasAttribute('controls') && !v.closest('[class*="player"],[class*="plyr"],[class*="jw"],[class*="video-js"]')) { v.setAttribute('controls', ''); } }); } catch (x) {}
     function unlockScroll() {
       try {
         [document.body, document.documentElement].forEach(function (el) {
@@ -127,7 +118,11 @@
     /* ---- collapse leftover ad "black boxes" — conservative: only clear ad units, never the page's own content ---- */
     // ad-specific class/id patterns with word boundaries (won't match "header", "loading", "download", "read", etc.)
     var AD_CLS = /(^|[\s_-])(ad|ads|adbox|ad-box|adslot|ad-slot|adunit|ad-unit|adzone|ad-zone|adframe|ad-wrapper|ad-container|advertisement|adsbygoogle|google-ad|googlead|sponsor|sponsored)($|[\s_-])/i;
+    // don't run heavy DOM scans while the user is actively scrolling — keeps scrolling smooth
+    var scrolling = 0;
+    window.addEventListener('scroll', function () { scrolling = Date.now(); }, { passive: true });
     function killAdBoxes() {
+      if (Date.now() - scrolling < 400) return; // defer during scroll
       try {
         // iframes pointing at a known ad/sketchy host only
         [].forEach.call(document.querySelectorAll('iframe'), function (f) {
@@ -148,8 +143,17 @@
     }
     function collapse(el) { try { el.style.setProperty('display', 'none', 'important'); el.style.setProperty('height', '0', 'important'); el.style.setProperty('min-height', '0', 'important'); } catch (e) {} }
     killAdBoxes();
-    try { new MutationObserver(function () { killAdBoxes(); }).observe(document.documentElement, { childList: true, subtree: true }); } catch (e) {}
-    setInterval(killAdBoxes, 2000);
+    // Debounce: on a busy page (LinkedIn, feeds) the DOM mutates constantly; running killAdBoxes on every mutation
+    // saturates the main thread and makes scrolling hang. Coalesce bursts into one run shortly after they settle.
+    var adT = 0;
+    var ric = window.requestIdleCallback ? function (f) { window.requestIdleCallback(f, { timeout: 1000 }); } : function (f) { setTimeout(f, 0); };
+    try {
+      new MutationObserver(function () {
+        if (adT) return;
+        adT = setTimeout(function () { adT = 0; ric(killAdBoxes); }, 600);
+      }).observe(document.documentElement, { childList: true, subtree: true });
+    } catch (e) {}
+    setInterval(function () { ric(killAdBoxes); }, 4000);
 
     /* ---- redirect guard (page side): stop tap-hijack and idle/timer redirects ----
        Key idea: a tap only counts as real navigation INTENT if it lands on a genuine interactive element

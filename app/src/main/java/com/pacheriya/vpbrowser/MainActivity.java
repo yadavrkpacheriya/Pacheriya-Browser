@@ -87,6 +87,7 @@ public class MainActivity extends Activity {
     static final Pattern MEDIA = Pattern.compile("(?i)^https?://[^?#]+\\.(mp4|m3u8|webm|mkv|mov|m4v|mp3|m4a|mpd)(\\?.*)?(#.*)?$");
 
     static class Tab {
+        Uri sharedFinderClip;
         WebView wv;
         String title = "New tab";
         String url = "";
@@ -950,6 +951,7 @@ public class MainActivity extends Activity {
 
             @Override public void onPageStarted(WebView v, String u, Bitmap f) {
                 t.url = u;
+                if (u == null || !u.startsWith(FINDER + "#vid=")) t.sharedFinderClip = null;
                 t.swipeOff = false;
                 if (t.swipe != null) t.swipe.setEnabled(true);
                 if (u != null && !u.startsWith("http")) t.pageHost = null;   // own page / file: no "previous site" for the redirect guard
@@ -1767,7 +1769,9 @@ public class MainActivity extends Activity {
         }
         /** Hand the finder page the bytes of a shared clip (content:// uri) or a direct video link, so it can read the sound track. Own pages only, max 16 MB. */
         @JavascriptInterface public void clipBytes(final int id, final String src) {
-            if (t.url == null || !t.url.startsWith("file:///android_asset/") || src == null) return;
+            if (!finderPage(t.url) || src == null) return;
+            if (src.startsWith("content://") && !Uri.parse(src).equals(t.sharedFinderClip)) return;
+            final int generation = t.gen;
             final WebView wv = t.wv;
             new Thread(new Runnable() { public void run() {
                 String out = "";
@@ -1789,7 +1793,7 @@ public class MainActivity extends Activity {
                 } catch (Throwable e) { out = ""; }
                 finally { try { if (in != null) in.close(); } catch (Throwable e) {} }
                 final String fo = out;
-                ui.post(new Runnable() { public void run() { try { wv.evaluateJavascript("window.__vpClip&&window.__vpClip(" + id + ",'" + fo + "')", null); } catch (Throwable e) {} } });
+                ui.post(new Runnable() { public void run() { try { if (generation != t.gen || !finderPage(wv.getUrl())) return; wv.evaluateJavascript("window.__vpClip&&window.__vpClip(" + id + ",'" + fo + "')", null); } catch (Throwable e) {} } });
             } }).start();
         }
         @JavascriptInterface public float getVol() {
@@ -1953,9 +1957,57 @@ public class MainActivity extends Activity {
             Store.addHistory(sp, title, url);
         }
 
+        private boolean finderPage(String url) {
+            return url != null && (url.equals(FINDER) || url.startsWith(FINDER + "#"));
+        }
+
+        /** A content URI from Android's share sheet may not be playable by a file-origin WebView. */
+        @JavascriptInterface public void sharedFrames(final int id) {
+            ui.post(() -> {
+                final Uri uri = t.sharedFinderClip;
+                final String page = t.wv.getUrl();
+                if (uri == null || !finderPage(page)) return;
+                final int generation = t.gen;
+                ocrPool.execute(() -> {
+                    org.json.JSONArray frames = new org.json.JSONArray();
+                    long duration = 0;
+                    String name = "";
+                    try (android.database.Cursor c = getContentResolver().query(uri,
+                            new String[]{android.provider.OpenableColumns.DISPLAY_NAME}, null, null, null)) {
+                        if (c != null && c.moveToFirst()) name = c.getString(0);
+                    } catch (Exception ignored) {}
+                    android.media.MediaMetadataRetriever reader = new android.media.MediaMetadataRetriever();
+                    try {
+                        reader.setDataSource(MainActivity.this, uri);
+                        duration = Long.parseLong(reader.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION));
+                        for (int percent : new int[]{10, 25, 40, 55, 70, 85}) {
+                            android.graphics.Bitmap frame = reader.getScaledFrameAtTime(duration * 10L * percent,
+                                    android.media.MediaMetadataRetriever.OPTION_CLOSEST, 900, 900);
+                            if (frame == null) continue;
+                            try {
+                                java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+                                frame.compress(android.graphics.Bitmap.CompressFormat.JPEG, 82, out);
+                                frames.put(android.util.Base64.encodeToString(out.toByteArray(), android.util.Base64.NO_WRAP));
+                            } finally { frame.recycle(); }
+                        }
+                    } catch (Exception ignored) {
+                        // A partially readable clip can still supply useful frames.
+                    } finally { try { reader.release(); } catch (Exception ignored) {} }
+                    final String js = "window.__vpSharedFrames&&window.__vpSharedFrames(" + id + "," + duration +
+                            "," + frames + "," + org.json.JSONObject.quote(name == null ? "" : name) + ")";
+                    ui.post(() -> {
+                        if (generation == t.gen && page.equals(t.wv.getUrl()) && uri.equals(t.sharedFinderClip))
+                            t.wv.evaluateJavascript(js, null);
+                    });
+                });
+            });
+        }
+
         /** Resolve a social/video page link to a direct video URL (og:video, twitter:player:stream, or a media .mp4 in the HTML). */
         @JavascriptInterface public void resolveVideo(final int id, final String link) {
-            if (t.url == null || !t.url.startsWith("file:///android_asset/")) { finderVid(id, ""); return; }
+            final String page = t.url;
+            final int generation = t.gen;
+            if (!finderPage(page) || link == null || link.length() > 8192 || !(link.startsWith("https://") || link.startsWith("http://"))) return;
             new Thread(new Runnable() { public void run() {
                 String found = "";
                 try {
@@ -1965,15 +2017,30 @@ public class MainActivity extends Activity {
                     c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/131 Mobile Safari/537.36");
                     c.setRequestProperty("Accept-Language", "en-US,en;q=0.9");
                     java.io.BufferedReader br = new java.io.BufferedReader(new java.io.InputStreamReader(c.getInputStream()));
-                    StringBuilder sb = new StringBuilder(); String ln; int cap = 0;
-                    while ((ln = br.readLine()) != null && cap < 4_000_000) { sb.append(ln).append('\n'); cap += ln.length(); }
-                    br.close();
+                    StringBuilder sb = new StringBuilder();
+                    try (java.io.Reader reader = br) {
+                        char[] block = new char[8192];
+                        int n;
+                        while (sb.length() < 4_000_000 && (n = reader.read(block, 0, Math.min(block.length, 4_000_000 - sb.length()))) > 0)
+                            sb.append(block, 0, n);
+                    } finally { c.disconnect(); }
                     String html = sb.toString();
-                    found = firstMatch(html,
-                        "property=\"og:video\"[^>]*content=\"([^\"]+)\"",
-                        "property=\"og:video:url\"[^>]*content=\"([^\"]+)\"",
-                        "property=\"og:video:secure_url\"[^>]*content=\"([^\"]+)\"",
-                        "name=\"twitter:player:stream\"[^>]*content=\"([^\"]+)\"",
+                    java.util.Map<String, String> tags = new java.util.HashMap<>();
+                    java.util.regex.Matcher tag = java.util.regex.Pattern.compile("(?is)<meta\\b[^>]{1,16384}>").matcher(html);
+                    java.util.regex.Pattern attribute = java.util.regex.Pattern.compile("(?is)\\b(property|name|content)\\s*=\\s*([\"'])(.*?)\\2");
+                    while (tag.find()) {
+                        String key = "", value = "";
+                        java.util.regex.Matcher attr = attribute.matcher(tag.group());
+                        while (attr.find()) {
+                            if ("content".equalsIgnoreCase(attr.group(1))) value = attr.group(3);
+                            else key = attr.group(3).toLowerCase(java.util.Locale.ROOT);
+                        }
+                        if (!key.isEmpty() && !value.isEmpty() && !tags.containsKey(key)) tags.put(key, value);
+                    }
+                    for (String key : new String[]{"og:video:secure_url", "og:video:url", "og:video", "twitter:player:stream"}) {
+                        if (tags.containsKey(key)) { found = tags.get(key); break; }
+                    }
+                    if (found.isEmpty()) found = firstMatch(html,
                         "\"video_url\":\"([^\"]+\\.mp4[^\"]*)\"",
                         "\"playbackUrl\":\"([^\"]+)\"",
                         "\"contentUrl\":\"([^\"]+\\.mp4[^\"]*)\"",
@@ -1981,14 +2048,14 @@ public class MainActivity extends Activity {
                     // The post's own words (caption, account, hashtags) are the best clue to the original video: hand them to the finder page.
                     try {
                         org.json.JSONObject meta = new org.json.JSONObject();
-                        meta.put("t", firstMatch(html, "property=\"og:title\"[^>]*content=\"([^\"]*)\"", "content=\"([^\"]*)\"[^>]*property=\"og:title\"", "<title[^>]*>([^<]*)</title>"));
-                        meta.put("d", firstMatch(html, "property=\"og:description\"[^>]*content=\"([^\"]*)\"", "content=\"([^\"]*)\"[^>]*property=\"og:description\"", "name=\"description\"[^>]*content=\"([^\"]*)\""));
+                        meta.put("t", tags.getOrDefault("og:title", firstMatch(html, "(?is)<title[^>]*>([^<]*)</title>")));
+                        meta.put("d", tags.getOrDefault("og:description", tags.getOrDefault("description", "")));
                         final String mj = meta.toString(); final WebView mw = t.wv;
-                        ui.post(new Runnable() { public void run() { try { mw.evaluateJavascript("window.__vpMeta&&window.__vpMeta(" + id + "," + org.json.JSONObject.quote(mj) + ")", null); } catch (Throwable e) {} } });
+                        ui.post(new Runnable() { public void run() { try { if (generation != t.gen || !finderPage(mw.getUrl())) return; mw.evaluateJavascript("window.__vpMeta&&window.__vpMeta(" + id + "," + org.json.JSONObject.quote(mj) + ")", null); } catch (Throwable e) {} } });
                     } catch (Throwable e) { /* ignore */ }
                     if (found != null) found = found.replace("\\u0026", "&").replace("\\/", "/");
                 } catch (Throwable e) { found = ""; }
-                finderVid(id, found == null ? "" : found);
+                finderVid(id, found == null ? "" : found.replace("&amp;", "&"), generation);
             } }).start();
         }
         private String firstMatch(String html, String... patterns) {
@@ -1997,9 +2064,9 @@ public class MainActivity extends Activity {
             }
             return "";
         }
-        private void finderVid(final int id, final String url) {
+        private void finderVid(final int id, final String url, final int generation) {
             final WebView w = t.wv;
-            ui.post(new Runnable() { public void run() { try { w.evaluateJavascript("window.__vpVid&&window.__vpVid(" + id + "," + org.json.JSONObject.quote(url) + ")", null); } catch (Throwable e) {} } });
+            ui.post(new Runnable() { public void run() { try { if (generation != t.gen || !finderPage(w.getUrl())) return; w.evaluateJavascript("window.__vpVid&&window.__vpVid(" + id + "," + org.json.JSONObject.quote(url) + ")", null); } catch (Throwable e) {} } });
         }
 
         /** Active download tasks (for the in-app Downloads screen): [{id,name,done,total,state}]. */
@@ -2822,7 +2889,7 @@ public class MainActivity extends Activity {
                 if (cur.url.startsWith("http")) cur.wv.evaluateJavascript(readerJs + ";window.__vpReader.auto='" + autoTr + "';window.__vpReader.toggle()", null);
                 break;
             case 23:
-                if (cur != null) cur.wv.loadUrl("file:///android_asset/finder.html");
+                findFromCurrentPage();
                 break;
             case 25:
                 if (cur != null) cur.wv.loadUrl("file:///android_asset/assistant.html");
@@ -2971,37 +3038,59 @@ public class MainActivity extends Activity {
     }
 
     // ---------------- lifecycle ----------------
-    /** Returns a shared video URI string or a shared text link from a SEND intent, or null. */
-    private String sharedFromIntent(Intent i) {
-        if (i == null || !Intent.ACTION_SEND.equals(i.getAction())) return null;
-        try {
-            String type = i.getType();
-            if (type != null && type.startsWith("video/")) {
-                Uri u = (Uri) i.getParcelableExtra(Intent.EXTRA_STREAM);
-                if (u != null) return "vid:" + u.toString();
-            }
-            String txt = i.getStringExtra(Intent.EXTRA_TEXT);
-            if (txt != null) {
-                java.util.regex.Matcher m = java.util.regex.Pattern.compile("https?://\\S+").matcher(txt);
-                if (m.find()) return "lnk:" + m.group();
-            }
-        } catch (Throwable e) {}
-        return null;
+    private static final String FINDER = "file:///android_asset/finder.html";
+
+    /** Put the caption and the granted clip together so a repost can credit a different video. */
+    private String sharedFromIntent(Intent intent) {
+        if (intent == null || !Intent.ACTION_SEND.equals(intent.getAction())) return null;
+        CharSequence extra = intent.getCharSequenceExtra(Intent.EXTRA_TEXT);
+        String text = extra == null ? "" : extra.toString();
+        if (text.length() > 6000) text = text.substring(0, 6000);
+        Uri clip = null;
+        if (intent.getType() != null && intent.getType().startsWith("video/")) {
+            android.os.Parcelable stream = intent.getParcelableExtra(Intent.EXTRA_STREAM);
+            if (stream instanceof Uri) clip = (Uri) stream;
+            if (clip == null && intent.getClipData() != null && intent.getClipData().getItemCount() > 0)
+                clip = intent.getClipData().getItemAt(0).getUri();
+        }
+        if (clip != null && "content".equals(clip.getScheme()) &&
+                !(getPackageName() + ".fileprovider").equals(clip.getAuthority()) &&
+                checkUriPermission(clip, android.os.Process.myPid(), android.os.Process.myUid(),
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION) == PackageManager.PERMISSION_GRANTED) {
+            return "#vid=" + Uri.encode(clip.toString()) + "&clue=" + Uri.encode(text);
+        }
+        if (text.isEmpty()) return null;
+        return (text.contains("https://") || text.contains("http://") ? "#lnk=" : "#clue=") + Uri.encode(text);
     }
 
-    /** Open the Find-full-video page seeded with a shared video or link. */
-    private void openFinderWith(String payload) {
+    private void openFinderWith(String fragment) {
         if (cur == null) return;
-        String frag;
-        if (payload.startsWith("vid:")) {
-            // grant the WebView read access to the shared video and hand it the content URI
-            Uri u = Uri.parse(payload.substring(4));
-            try { grantUriPermission(getPackageName(), u, Intent.FLAG_GRANT_READ_URI_PERMISSION); } catch (Throwable e) {}
-            frag = "#vid=" + Uri.encode(u.toString());
-        } else { // link
-            frag = "#lnk=" + Uri.encode(payload.substring(4));
+        Uri page = Uri.parse(FINDER + fragment);
+        String video = page.getEncodedFragment() == null ? null :
+                Uri.parse("https://finder.invalid/?" + page.getEncodedFragment()).getQueryParameter("vid");
+        cur.sharedFinderClip = video == null ? null : Uri.parse(video);
+        cur.wv.loadUrl(page.toString());
+    }
+
+    private void findFromCurrentPage() {
+        if (cur == null) return;
+        final Tab tab = cur;
+        final String page = tab.wv.getUrl();
+        Uri uri = page == null ? Uri.EMPTY : Uri.parse(page);
+        String host = uri.getHost();
+        if (host == null || !"https".equals(uri.getScheme()) ||
+                !host.toLowerCase(java.util.Locale.ROOT).matches("(?:[a-z0-9-]+\\.)*(?:instagram\\.com|tiktok\\.com|facebook\\.com|fb\\.watch|youtube\\.com|youtu\\.be|x\\.com|twitter\\.com|vimeo\\.com|dailymotion\\.com)")) {
+            openFinderWith("");
+            return;
         }
-        cur.wv.loadUrl("file:///android_asset/finder.html" + frag);
+        tab.wv.evaluateJavascript("(function(){var m=document.querySelector('meta[property=\"og:description\"],meta[name=\"description\"]');return ((m?m.content:'')+'\\n'+document.title).slice(0,1600)})()",
+                raw -> {
+                    if (cur != tab || !page.equals(tab.wv.getUrl())) return;
+                    String clue = "";
+                    try { clue = new org.json.JSONArray("[" + raw + "]").optString(0, ""); }
+                    catch (org.json.JSONException ignored) {}
+                    openFinderWith("#lnk=" + Uri.encode(page) + "&clue=" + Uri.encode(clue));
+                });
     }
 
     @Override protected void onNewIntent(Intent i) {

@@ -12,21 +12,35 @@ p{color:#aaa;font-size:13.5px;line-height:1.45}
 .b.p{background:#3a2d6b}.b.best{background:#E2B33C}
 #st{color:#E2B33C;font-size:14px}
 .find{display:flex;gap:6px;margin:8px 0}
-.find input{flex:1;background:#1c1c24;border:1px solid #333;color:#fff;border-radius:9px;padding:12px;font-size:15px}
+.find input,.find textarea{flex:1;background:#1c1c24;border:1px solid #333;color:#fff;border-radius:9px;padding:12px;font-size:15px}
 .find button{background:#E2B33C;color:#fff;border:0;border-radius:9px;padding:0 16px;font-size:15px}
 .hr{border:0;border-top:1px solid #2a2a30;margin:22px 0 4px}
 .mem{background:#16161c;border:1px solid #262630;border-radius:10px;padding:10px 12px;margin:10px 0;font-size:13px;color:#bbb}
 .mem a{color:#9a7bff;text-decoration:none}
 .tag{font-size:12px;color:#8a7;}
+.find input,.find textarea{min-width:0}.find textarea{font:inherit;resize:vertical}
+#sources a{color:#c7b7ff;overflow-wrap:anywhere}
+#sourceLinks a,#sourceResults small{display:block;margin:4px 0}
+#sourceResults{padding-left:22px}#sourceResults li{margin:10px 0}#sourceResults small{color:#aaa}
+#sourceMore{display:flex;gap:16px;flex-wrap:wrap}#st:empty{display:none}
 </style></head><body>
 <h2>Find the full video</h2>
-<p>Pick the clip (10-30 seconds). The app reads any name on screen, picks the clearest frame, and searches automatically to find the movie or the full video. If the first search finds nothing, tap “search another engine” or “try a different frame” below.</p>
+<p>Choose a saved clip or paste a Reel. The finder looks for the longer video using the post caption, text in the frames, or a line of dialogue.</p>
 <label class="pick">Choose the clip &amp; find it<input id="f" type="file" accept="video/*" style="display:none"></label>
 <div class="mem" style="margin:10px 0">
 <b>Or paste a video link</b> (Instagram, Twitter/X, TikTok, Facebook, a direct .mp4…):
-<div class="find" style="margin:8px 0 0"><input id="lk" placeholder="paste the video/reel link" autocomplete="off"><button id="lkb">Find</button></div>
-<div style="font-size:12px;color:#889;margin-top:6px">Instagram/TikTok links only work if the post is public. If it can't read the link, open the post, play the video, then use “Choose the clip”.</div>
+<div class="find" style="margin:8px 0 0"><textarea id="lk" rows="2" aria-label="Post link and caption" placeholder="Paste a Reel link and its caption" autocomplete="off"></textarea><button id="lkb">Find</button></div>
+<div style="font-size:12px;color:#889;margin-top:6px">If a post needs sign-in, share the saved clip or paste its caption with the link.</div>
 </div>
+<div id="st" role="status"></div><a id="openPost" style="color:#c7b7ff" hidden>Open the original post</a>
+<section id="sources" class="fr">
+<h2>Possible full videos</h2>
+<div id="sourceLinks"></div>
+<label for="sourceQuery">Search words</label>
+<div class="find"><input id="sourceQuery" maxlength="140" placeholder="Title, creator, or a spoken line"><button id="sourceGo">Search</button></div>
+<p id="sourceStatus" role="status"></p>
+<ol id="sourceResults"></ol><div id="sourceMore"></div>
+</section>
 <div id="again"></div>
 <div id="clues"></div>
 <div class="mem" style="margin-top:10px">
@@ -34,7 +48,7 @@ p{color:#aaa;font-size:13.5px;line-height:1.45}
 <div class="find" style="margin:8px 0 0"><input id="ac" placeholder="actor name, a line of dialogue, scene..." autocomplete="off"><button id="acb">Find</button></div>
 <div id="acr" class="row" style="margin-top:8px"></div>
 </div>
-<div id="st"></div><div id="nameh"></div><div id="mem"></div><div id="out"></div>
+<div id="nameh"></div><div id="mem"></div><div id="out"></div>
 
 <hr class="hr">
 <h2>Where can I watch it?</h2>
@@ -46,6 +60,7 @@ p{color:#aaa;font-size:13.5px;line-height:1.45}
 <div id="mysites"></div>
 
 <video id="v" muted playsinline style="display:none"></video>
+<script src="finder-sources.js"></script>
 <script>
 var v=document.getElementById('v'),out=document.getElementById('out'),st=document.getElementById('st');
 var LS=function(k,d){try{return JSON.parse(localStorage.getItem('vpf_'+k))||d}catch(e){return d}};
@@ -57,11 +72,6 @@ function order(list){var s=LS('eng',{});var l=list.slice().sort(function(a,b){re
 
 /* Reverse image search needs a real image URL. The app uploads the frame to a temporary
    image host, then opens the search engine with that URL so it searches on its own. */
-var HOSTS=[
- {n:'catbox',url:'https://catbox.moe/user/api.php',form:function(b){var fd=new FormData();fd.append('reqtype','fileupload');fd.append('fileToUpload',new File([b],'f.jpg',{type:'image/jpeg'}));return fd;},parse:function(t){return t.trim().indexOf('http')===0?t.trim():''}},
- {n:'uguu',url:'https://uguu.se/upload.php',form:function(b){var fd=new FormData();fd.append('files[]',new File([b],'f.jpg',{type:'image/jpeg'}));return fd;},parse:function(t){try{return JSON.parse(t).files[0].url}catch(e){return ''}}},
- {n:'tmpfiles',url:'https://tmpfiles.org/api/v1/upload',form:function(b){var fd=new FormData();fd.append('file',new File([b],'f.jpg',{type:'image/jpeg'}));return fd;},parse:function(t){try{var u=JSON.parse(t).data.url;return u.replace('tmpfiles.org/','tmpfiles.org/dl/')}catch(e){return ''}}}
-];
 window.__vpUp=function(id,url){var f=upCbs[id];delete upCbs[id];if(f)f(url||'')};
 var upCbs={},upN=0;
 function uploadFrame(blob,cb){
@@ -81,28 +91,6 @@ var ENG=[
  ['TinEye',function(u){return 'https://tineye.com/search?url='+encodeURIComponent(u)}],
  ['Web (image)',function(u){return 'https://www.google.com/searchbyimage?image_url='+encodeURIComponent(u)+'&hl=en'}]
 ];
-function card(blob){
- var d=document.createElement('div');d.className='fr';
- var im=document.createElement('img');im.src=URL.createObjectURL(blob);d.appendChild(im);
- var msg=document.createElement('div');msg.style.cssText='font-size:12.5px;color:#9a7bff;margin:8px 0 4px';d.appendChild(msg);
- var r=document.createElement('div');r.className='row';
- var engs=order(ENG), btns=[];
- var urlCache='';
- function run(name,mk){
-   bump(name);
-   if(urlCache){ location.href=mk(urlCache); return; }
-   msg.textContent='Uploading this picture, then searching…';
-   btns.forEach(function(b){b.disabled=true});
-   uploadFrame(blob,function(u){
-     btns.forEach(function(b){b.disabled=false});
-     if(!u){msg.textContent='Upload failed on this network — try another picture, or tap again.';return;}
-     urlCache=u; location.href=mk(u);
-   });
- }
- engs.forEach(function(x,idx){var b=document.createElement('button');b.className='b'+(idx===0?' best':'');b.textContent=x[0];b.onclick=function(){run(x[0],x[1])};btns.push(b);r.appendChild(b)});
- d.appendChild(r);out.appendChild(d);
-}
-
 /* detail score: busy, in-focus frames beat black/blurry/near-solid ones */
 function score(ctx,w,h){var d=ctx.getImageData(0,0,w,h).data,n=w*h,sum=0,sq=0,edge=0,prev=0;
  for(var i=0;i<d.length;i+=4){var g=(d[i]*0.3+d[i+1]*0.59+d[i+2]*0.11);sum+=g;sq+=g*g;if(i>0)edge+=Math.abs(g-prev);prev=g;}
@@ -110,40 +98,58 @@ function score(ctx,w,h){var d=ctx.getImageData(0,0,w,h).data,n=w*h,sum=0,sq=0,ed
  if(mean<14||mean>245)return 0;            /* almost black or white */
  return varc*0.5+(edge/n)*140;              /* contrast + edges */
 }
-var frames=[],bestBlob=null;
-function grab(times,i){
- if(i>=times.length){ pickDone(); return; }
- v.onseeked=function(){v.onseeked=null;var w=v.videoWidth,h=v.videoHeight;if(!w){grab(times,i+1);return}
-  var s=Math.min(1,1280/Math.max(w,h)),c=document.createElement('canvas');c.width=Math.round(w*s);c.height=Math.round(h*s);
-  var cx=c.getContext('2d');cx.drawImage(v,0,0,c.width,c.height);
-  var sc=0;try{sc=score(cx,c.width,c.height)}catch(e){sc=1}
-  c.toBlob(function(b){if(b)frames.push({b:b,s:sc});grab(times,i+1)},'image/jpeg',0.9)};
- try{v.currentTime=times[i]}catch(e){grab(times,i+1)}}
+var frames=[];
+function grab(times, i, run) {
+ if (run !== clipRun) return;
+ if (i >= times.length) { pickDone(); return; }
+ var done = false;
+ function next() {
+   if (done || run !== clipRun) return;
+   done = true; clearTimeout(seekTimer); v.onseeked = null; grab(times, i + 1, run);
+ }
+ seekTimer = setTimeout(next, 2500);
+ v.onseeked = function() {
+   v.onseeked = null;
+   try {
+     var w = v.videoWidth, h = v.videoHeight, scale = Math.min(1, 1024 / Math.max(w, h));
+     var c = document.createElement('canvas');
+     c.width = Math.max(1, Math.round(w * scale)); c.height = Math.max(1, Math.round(h * scale));
+     var ctx = c.getContext('2d'); ctx.drawImage(v, 0, 0, c.width, c.height);
+     var detail = score(ctx, c.width, c.height);
+     c.toBlob(function(blob) {
+       if (done || run !== clipRun) return;
+       if (blob) frames.push({b:blob, s:detail});
+       next();
+     }, 'image/jpeg', 0.88);
+   } catch (e) { next(); }
+ };
+ try { v.currentTime = times[i]; } catch (e) { next(); }
+}
 window.__vpTxt=function(id,txt){var f=txtCbs[id];delete txtCbs[id];if(f)f(txt||'')};
 var txtCbs={},txtN=0;
 function readFrameText(blob,cb){
  if(!(window.VPApp&&VPApp.frameText)){cb('');return;}
  var r=new FileReader();r.onload=function(){var id=++txtN;txtCbs[id]=cb;try{VPApp.frameText(id,String(r.result).split(',')[1])}catch(e){cb('')}};r.onerror=function(){cb('')};r.readAsDataURL(blob);
 }
-function cleanName(t){
- /* pull out plausible names / titles: capitalised words, drop noise */
- var lines=(t||'').split('\n'),out=[];
- lines.forEach(function(l){l=l.replace(/[^A-Za-z0-9 .&'-]/g,' ').replace(/\s+/g,' ').trim();
-  if(l.length<3||l.length>40)return;
-  if(/^(hd|full|video|subscribe|like|share|com|www|http|mp4|the end|watch|now|free)$/i.test(l))return;
-  var caps=(l.match(/\b[A-Z][a-z]+/g)||[]).length;
-  if(caps>=1&&/[A-Za-z]/.test(l))out.push(l);});
- return out;
+function cleanName(text) {
+ return (text || '').split(/\r?\n/).map(function(line) {
+   return line.replace(/[^\p{L}\p{M}\p{N} @#.'&–-]/gu, ' ').replace(/\s+/g, ' ').trim();
+ }).filter(function(line) {
+   return line.length >= 3 && line.length <= 90 && /\p{L}/u.test(line) &&
+     !/^(?:subscribe|follow|share|like|watch now|the end|instagram|tik\s?tok|full video|for you)$/i.test(line);
+ });
 }
 function showTextClues(){
  var box=document.getElementById('clues');if(!box)return;
- var all=[];var pend=Math.min(6,frames.length),done=0;
+ var run=clipRun, counts=new Map();var all=[];var pend=Math.min(6,frames.length),done=0;
  st.innerHTML='Reading any names or titles on screen…';
- for(var i=0;i<pend;i++){ (function(b){ readFrameText(b,function(txt){ cleanName(txt).forEach(function(n){ if(all.indexOf(n)<0)all.push(n)}); if(++done>=pend)render(); }); })(frames[i].b); }
+ for(var i=0;i<pend;i++){ (function(b){ readFrameText(b,function(txt){ if(run!==clipRun)return;Array.from(new Set(cleanName(txt))).forEach(function(n){ counts.set(n,(counts.get(n)||0)+1); if(all.indexOf(n)<0)all.push(n)}); if(++done>=pend)render(); }); })(frames[i].b); }
  if(pend===0)render();
  function render(){
+  all.sort(function(a,b){return counts.get(b)-counts.get(a)});
+  all.slice(0, 6).forEach(function(n){ FinderSources.hint(n, 'on-screen text', 55 + counts.get(n)); });
   AI.text=all;aiCard();
-  if(!all.length){box.innerHTML='<div class="mem" style="border-color:#555">No on-screen text found. Reverse-image search (tap a frame above) or the sound options are your best bet for this clip.</div>';return;}
+  if(!all.length){box.innerHTML='<div class="mem" style="border-color:#555">No on-screen text found. Reverse-image search (tap a frame below) or the sound options are your best bet for this clip.</div>';return;}
   box.innerHTML='<div class="fr" style="border:1px solid #E2B33C"><b>⭐ Best way to find it — text seen on screen</b><br><span style="font-size:12px;color:#9aa">Tap a word/name to find the exact movie or show it belongs to:</span><br><div style="margin-top:8px">'+
    all.slice(0,10).map(function(n){return '<a href="#" data-n="'+encodeURIComponent(n)+'" style="display:inline-block;background:#26262f;color:#E2B33C;border-radius:14px;padding:6px 11px;margin:3px;text-decoration:none;font-size:13px">'+n.replace(/</g,'&lt;')+'</a>'}).join('')+'</div>'+
    '<div style="margin-top:8px"><a href="#" id="allclues" style="color:#9aa;font-size:12px">search all together</a></div></div>';
@@ -155,48 +161,36 @@ function showTextClues(){
 function pickDone(){
  if(!frames.length){st.textContent='Could not read pictures from this clip. Try another file.';return;}
  frames.sort(function(a,b){return b.s-a.s});
- bestBlob=frames[0].b;
- showTextClues();           // on-screen text is the BEST clue for identifying a movie/show
- st.innerHTML='Reading the clip… upload all frames, then tap any to search it.';
- /* upload the top frames in PARALLEL so each can be searched, and show them as a grid */
- var pick=frames.slice(0,6);
- var grid=document.getElementById('framegrid'); if(!grid){grid=document.createElement('div');grid.id='framegrid';out.appendChild(grid);}
- grid.innerHTML='<div class="mem" style="margin-bottom:6px"><b>Frames from your clip</b> — tap one to reverse-search it, or use the engine buttons under each:</div>';
- grid.style.cssText='display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:8px 0';
- var upped=0;
- pick.forEach(function(fr,idx){
-  var cell=document.createElement('div');cell.style.cssText='background:#1c1c24;border-radius:9px;overflow:hidden';
-  var im=document.createElement('img');im.src=URL.createObjectURL(fr.b);im.style.cssText='width:100%;aspect-ratio:16/10;object-fit:cover;display:block;cursor:pointer';
-  cell.appendChild(im);grid.appendChild(cell);
-  // upload each frame in parallel; store its URL on the element
-  uploadFrame(fr.b,function(u){upped++;if(u&&u.indexOf('ERR:')!==0){fr.url=u;im.onclick=function(){multiEngine(u)};}else{im.style.opacity='.4';}
-    if(upped===pick.length)st.innerHTML='Tap a frame to search it. Best clue: use any <b>on-screen text</b> below — it finds the movie far better than the picture.';});
+ showTextClues();
+ st.textContent='Frames are ready. Choose a frame for a visual search, or use the dialogue search below.';
+ var grid=document.createElement('div'); grid.className='row'; out.appendChild(grid);
+ var run=clipRun;
+ frames.slice(0,6).forEach(function(frame,index){
+   var button=document.createElement('button'); button.className='b'; button.type='button';
+   button.setAttribute('aria-label','Search frame '+(index+1)); button.style.flex='1 1 28%';
+   var im=document.createElement('img'); im.src=objectUrl(frame.b); im.alt='Frame '+(index+1); im.style.width='100%';
+   button.appendChild(im); grid.appendChild(button);
+   button.onclick=function(){
+     if(frame.url){multiEngine(frame.url);return;}
+     button.disabled=true;st.textContent='Uploading the selected frame for visual search…';
+     uploadFrame(frame.b,function(u){
+       if(run!==clipRun)return;
+       button.disabled=false;
+       if(!/^https?:\/\//i.test(u)){st.textContent='Frame upload failed. Tap the frame to retry or search using its text.';return;}
+       frame.url=u; st.textContent='Choose a visual search engine.';multiEngine(u);
+     });
+   };
  });
- var ag=document.getElementById('again');
- ag.innerHTML='<div class="mem">Picture search matches clothing/scenes, so it often finds look-alikes, not the exact video. For the real source, prefer the <b>on-screen text</b> and <b>sound</b> options. <a href="#" id="alleng">open all engines for the best frame</a></div>';
- document.getElementById('alleng').onclick=function(ev){ev.preventDefault();if(bestBlob){uploadFrame(bestBlob,function(u){if(u&&u.indexOf('ERR:')!==0)multiEngine(u)})}};
- /* (no automatic jump to a search engine here: it used to leave this page with ONE frame before the other
-    frames and the on-screen-text clues could be used) */
+ document.getElementById('again').textContent='Tapping a frame uploads that picture to an image host for reverse-image search.';
 }
 /* open a chooser of ALL reverse-image engines for one frame URL (so you can try each quickly) */
 function multiEngine(u){
  var box=document.getElementById('engpick');if(!box){box=document.createElement('div');box.id='engpick';out.insertBefore(box,out.firstChild);}
  box.innerHTML='<div class="fr"><b>Search this frame on:</b><div class="row" style="margin-top:8px"></div></div>';
  var row=box.querySelector('.row');
- ENG.forEach(function(e){var b=document.createElement('button');b.className='b p';b.textContent=e[0];b.onclick=function(){bump(e[0]);location.href=e[1](u)};row.appendChild(b)});
+ order(ENG).forEach(function(e){var b=document.createElement('button');b.className='b p';b.textContent=e[0];b.onclick=function(){bump(e[0]);location.href=e[1](u)};row.appendChild(b)});
  box.scrollIntoView({behavior:'smooth'});
 }
-/* upload the best frame once, then open the chosen reverse-image engine straight on its results */
-function autoSearch(blob,tryEng){
- var engs=order(ENG), e=engs[tryEng%engs.length];
- st.innerHTML='Finding your video with '+e[0]+'…';
- uploadFrame(blob,function(u){
-   if(!u||u.indexOf('ERR:')===0){st.innerHTML='Snap search could not upload'+(u&&u.indexOf('ERR:')===0?' ('+u.slice(4)+')':'')+'. Use “find by name” below, or <a href="#" id="rt" style="color:#9a7bff">retry</a>.';var rt=document.getElementById('rt');if(rt)rt.onclick=function(ev){ev.preventDefault();autoSearch(blob,tryEng)};return;}
-   lastUrl=u; bump(e[0]); location.href=e[1](u);
- });
-}
-var lastUrl='';
-
 /* sound search: for AI-edited clips the picture may be fake but the song/score is often the real one */
 function soundCard(){var d=document.createElement('div');d.className='fr';
 var t=document.createElement('p');t.style.margin='2px 0 6px';t.innerHTML='<b>Find by sound</b> — if the video is edited or AI-made, the music or dialogue is often from the real movie.';d.appendChild(t);
@@ -251,7 +245,7 @@ function dlgRun(){
  if(DLG&&DLG.busy)return;
  btn.disabled=true;stEl.textContent='Reading the sound of the clip…';
  var D=DLG={busy:true,parts:[],sent:0,lines:[],ready:false};
- var watchdog=setTimeout(function(){if(D.busy&&!D.ready)fail('The speech engine did not start (it needs internet the first time). Tap to try again.')},180000);
+ var watchdog=setTimeout(function(){if(DLG===D&&D.busy&&!D.ready)fail('The speech engine did not start (it needs internet the first time). Tap to try again.')},180000);
  function fail(msg){clearTimeout(watchdog);D.busy=false;btn.disabled=false;stEl.textContent=msg}
  function next(){
   if(D.sent>=D.parts.length){clearTimeout(watchdog);D.busy=false;btn.disabled=false;dlgShow();return}
@@ -272,8 +266,10 @@ function dlgRun(){
   }
  };
  clipBuffer(function(buf){
+  if(DLG!==D)return;
   if(!buf){fail('Could not read this clip\'s sound (too large, or the site blocks it). Download the video, then use “Choose the clip”.');return}
   pcm16k(buf,function(pcm){
+   if(DLG!==D)return;
    if(!pcm){fail('This clip has no readable sound track.');return}
    var sq=0,cnt=0;for(var i=0;i<pcm.length;i+=16){sq+=pcm[i]*pcm[i];cnt++}if(Math.sqrt(sq/Math.max(1,cnt))<0.002){fail('The clip is silent, so there is no dialogue to search.');return}
    for(var p=0;p<pcm.length;p+=16000*25){var part=pcm.slice(p,p+16000*25);if(part.length>=16000)D.parts.push(part)}
@@ -290,6 +286,7 @@ function dlgShow(){
  if(!lines.length){stEl.textContent='No clear speech was heard in this clip (music or noise only). Try the picture or music options.';return}
  lines.sort(function(a,b){return b.length-a.length});
  var top=lines.slice(0,6);
+ top.forEach(function(line){FinderSources.hint(line,'dialogue',72)});
  AI.said=top;try{aiCard()}catch(e){}
  stEl.textContent='Heard these lines — tap one to search for the scene:';
  row.innerHTML='';
@@ -326,9 +323,10 @@ function aiCard(){
 
 /* ---- clues from the post itself: caption, account and hashtags usually name the original video ---- */
 function dec(x){var t=document.createElement('textarea');t.innerHTML=x||'';return t.value}
-window.__vpMeta=function(id,j){try{showPostClues(JSON.parse(j))}catch(e){}};
+window.__vpMeta=function(id,j){if(id!==activeLink)return;try{showPostClues(JSON.parse(j))}catch(e){}};
 function showPostClues(m){
  var title=dec(m.t).trim(),desc=dec(m.d).trim(),txt=(title+' '+desc).trim();if(txt.length<4)return;
+ FinderSources.post(desc);FinderSources.post(title);
  var box=document.getElementById('postclues');if(!box){box=document.createElement('div');box.id='postclues';var c=document.getElementById('clues');c.parentNode.insertBefore(box,c);}
  var chips=[],seen={};function add(label,q){if(!label||seen[label])return;seen[label]=1;chips.push([label,q])}
  (txt.match(/@[A-Za-z0-9_.]{3,30}/g)||[]).slice(0,6).forEach(function(h){add(h,h.slice(1)+' full video')});
@@ -339,58 +337,101 @@ function showPostClues(m){
  if(title.length>6)add('Search the post title',title.replace(/\s+on Instagram.*$/i,'').slice(0,100)+' full video');
  box.innerHTML='<div class="fr" style="border:1px solid #E2B33C"><b>⭐ From the post itself</b><br><span style="font-size:12px;color:#9aa">The account, hashtags and caption usually name the original. Tap one to search:</span><div class="cap" style="font-size:12.5px;color:#ccc;margin:8px 0;max-height:74px;overflow:auto"></div><div class="row"></div></div>';
  box.querySelector('.cap').textContent=txt.slice(0,400);
- AI.post=txt;aiCard();
+ AI.post=Array.from(new Set([sharedWords,txt].filter(Boolean))).join('\n');aiCard();
  var row=box.querySelector('.row');
  chips.forEach(function(c){var b=document.createElement('button');b.className='b p';b.textContent=c[0];b.onclick=function(){location.href='https://www.google.com/search?q='+encodeURIComponent(c[1])};row.appendChild(b)});
 }
 
-/* ---- find by pasted video link ---- */
-function startFromVideoUrl(vurl){
- out.innerHTML='';frames=[];bestBlob=null;lastUrl='';st.textContent='Loading the video…';
- v.crossOrigin='anonymous';
- v.src=vurl;clipSrc={url:vurl};AI.said=[];dlgCard();
- v.onloadedmetadata=function(){var d=isFinite(v.duration)&&v.duration>0?v.duration:10;soundCard();grab([0.1,0.25,0.4,0.55,0.7,0.85].map(function(p){return Math.max(0.1,d*p)}),0)};
- v.onerror=function(){st.innerHTML='Could not load that video directly (the site may block it or need login). Open the post, play the video, then use “Choose the clip” above.';};
+var clipRun=0, seekTimer=0, objectUrls=[], activeLink=0, sharedWords='';
+function objectUrl(blob){var url=URL.createObjectURL(blob);objectUrls.push(url);return url}
+function resetClip(link){
+ var postLink=document.getElementById('openPost');postLink.hidden=!link;
+ if(link)postLink.href=link;else postLink.removeAttribute('href');
+ clipRun++; activeLink=0; clearTimeout(seekTimer);
+ v.onloadedmetadata=v.onseeked=v.onerror=null;v.removeAttribute('src');v.load();
+ objectUrls.forEach(function(url){URL.revokeObjectURL(url)});objectUrls=[];
+ frames=[];clipSrc=null;DLG=null;sharedWords='';
+ AI={link:link||'',post:'',text:[],said:[]};FinderSources.reset(link);
+ ['out','st','again','clues','nameh','postclues','dlgbox'].forEach(function(id){var e=document.getElementById(id);if(e)e.replaceChildren()});
+ aiCard();
 }
-/* resolve a social link to a direct video URL via the app (reads og:video / media json; no browser CORS limit) */
-var lkCbs={},lkN=0;window.__vpVid=function(id,url){var f=lkCbs[id];delete lkCbs[id];if(f)f(url||'')};
-function resolveVideoUrl(link,cb){
- // direct video file → use as-is
- if(/\.(mp4|webm|m3u8|mov)(\?|$)/i.test(link)){cb(link);return;}
- if(window.VPApp&&VPApp.resolveVideo){var id=++lkN;lkCbs[id]=cb;try{VPApp.resolveVideo(id,link)}catch(e){cb('')}return;}
- cb('');
+function startMedia(src, file){
+ var run=clipRun;
+ clipSrc=file?{file:file}:{url:src};dlgCard();
+ st.textContent='Reading frames from the clip…';
+ v.onloadedmetadata=function(){
+   if(run!==clipRun)return;
+   var d=v.duration;
+   if(!Number.isFinite(d)||d<=0){st.textContent='This stream has no seekable duration. Use the caption or choose a saved clip.';return;}
+   FinderSources.duration(d);soundCard();
+   grab([0.1,0.25,0.4,0.55,0.7,0.85].map(function(p){return d*p}),0,run);
+ };
+ v.onerror=function(){if(run===clipRun)st.textContent='The frames could not be read. Try a saved clip, a caption, or a line of dialogue.'};
+ if(file || src.startsWith('blob:'))v.removeAttribute('crossorigin');else v.crossOrigin='anonymous';
+ v.src=src;
 }
-function findByLink(){
- var link=(document.getElementById('lk').value||'').trim();
- if(!link){st.textContent='Paste a video or reel link first.';return;}
- if(!/^https?:\/\//i.test(link))link='https://'+link;
- AI.link=link;aiCard();
- st.textContent='Reading the link…';
- resolveVideoUrl(link,function(vurl){
-  if(!vurl){st.innerHTML='Couldn’t get the video from that link. It may be private or login-only. Open the post, play the video, then use “Choose the clip” above.';return;}
-  startFromVideoUrl(vurl);
- });
+var lkN=0;
+window.__vpVid=function(id,url){
+ if(id!==activeLink)return;
+ if(/^https?:\/\//i.test(url))startMedia(url,null);
+ else st.textContent='This post did not expose a playable clip. Use its caption, or choose the saved clip above.';
+};
+function findByLink(value){
+ var input=document.getElementById('lk'), raw=typeof value==='string'?value:input.value;
+ var tokens=raw.match(/https?:\/\/[^\s<>"'“”]+/gi)||[];
+ if(!tokens.length && /^(?:[\w-]+\.)+[a-z]{2,}\//i.test(raw.trim()))tokens=['https://'+raw.trim()];
+ var social=tokens.find(function(x){try{return /(^|\.)(instagram\.com|tiktok\.com|facebook\.com|threads\.net|x\.com|twitter\.com)$/i.test(new URL(x).hostname)}catch(e){return false}});
+ var link;
+ try{link=new URL((social||tokens[0]).replace(/[.,;!?)]+$/,''));
+   if(!['http:','https:'].includes(link.protocol)||link.username||link.password)throw Error();
+ }catch(e){st.textContent='Paste a public video link beginning with https://.';return;}
+ resetClip(link.href);input.value=link.href;
+ sharedWords=raw.replace(link.href,'').replace((social||tokens[0]),'').trim();
+ if(sharedWords){showPostClues({d:sharedWords,t:''});}
+ if(/\.(mp4|webm|m3u8|mov)$/i.test(link.pathname)){startMedia(link.href,null);return;}
+ st.textContent='Reading the post caption and looking for a playable clip…';
+ if(window.VPApp&&VPApp.resolveVideo){
+   activeLink=++lkN;
+   try{VPApp.resolveVideo(activeLink,link.href);return;}catch(e){}
+ }
+ st.textContent='Use the shared caption or choose a saved clip to continue.';
 }
 document.getElementById('lkb').onclick=findByLink;
-document.getElementById('lk').addEventListener('keydown',function(e){if(e.key==='Enter')findByLink();});
-
-/* auto-start when a video or link was SHARED into the app (Telegram, Gallery, Instagram share → this page) */
-(function(){
- var h=location.hash||'';
- var mV=h.match(/[#&]vid=([^&]+)/),mL=h.match(/[#&]lnk=([^&]+)/);
- if(mV){try{var u=decodeURIComponent(mV[1]);st.textContent='Reading the shared video…';startFromVideoUrl(u);}catch(e){}}
- else if(mL){try{var lk=decodeURIComponent(mL[1]);document.getElementById('lk').value=lk;AI.link=lk;st.textContent='Reading the shared link…';resolveVideoUrl(lk,function(vurl){if(vurl)startFromVideoUrl(vurl);else st.innerHTML='Couldn’t read that shared link (may be private). Open the post, play it, then use “Choose the clip”.';});}catch(e){}}
-})();
-
-document.getElementById('f').onchange=function(){var f=this.files[0];if(!f)return;out.innerHTML='';frames=[];bestBlob=null;lastUrl='';st.textContent='Reading the clip…';
-nameHint(f.name);clipSrc={file:f};AI.said=[];dlgCard();
-v.src=URL.createObjectURL(f);v.onloadedmetadata=function(){var d=isFinite(v.duration)&&v.duration>0?v.duration:10;soundCard();grab([0.1,0.25,0.4,0.55,0.7,0.85].map(function(p){return Math.max(0.1,d*p)}),0)};
-v.onerror=function(){st.textContent='This file could not be read as a video. Try another clip.'}};
+document.getElementById('lk').addEventListener('keydown',function(e){if(e.key==='Enter' && !e.shiftKey){e.preventDefault();findByLink();}});
+function readShare(){
+ var args=new URLSearchParams(location.hash.slice(1)), video=args.get('vid'), link=args.get('lnk'), clue=args.get('clue');
+ if(video && video.startsWith('content://')){
+   resetClip(); clipSrc={url:video};dlgCard();
+   if(clue)showPostClues({d:clue,t:''});
+   activeLink=++lkN;st.textContent='Reading the shared clip…';
+   if(window.VPApp&&VPApp.sharedFrames){VPApp.sharedFrames(activeLink);return;}
+   startMedia(video,null);
+ }else if(link){findByLink(link+(clue?'\n'+clue:''));}
+ else{resetClip();if(clue)showPostClues({d:clue,t:''});}
+}
+window.__vpSharedFrames=function(id,durationMs,encoded,name){
+ if(id!==activeLink)return;
+ nameHint(name);
+ FinderSources.duration(durationMs/1000);
+ for(var item of encoded){
+   try{var bytes=Uint8Array.from(atob(item),function(c){return c.charCodeAt(0)});
+     frames.push({b:new Blob([bytes],{type:'image/jpeg'}),s:0});
+   }catch(e){}
+ }
+ if(frames.length){soundCard();pickDone();}
+ else st.textContent='Could not read frames from this share. Choose the saved file or enter a line from the clip.';
+};
+window.addEventListener('hashchange',readShare);
+document.getElementById('f').onchange=function(){
+ var file=this.files[0];if(!file)return;this.value='';resetClip();document.getElementById('lk').value='';
+ nameHint(file.name);startMedia(objectUrl(file),file);
+};
 
 /* search by the file's own name: clips are often named after the movie, so offer the cleaned name as a search */
 function nameHint(fn){var box=document.getElementById('nameh');if(!box)return;
 var n=(fn||'').replace(/\.[a-z0-9]+$/i,'').replace(/[._\-]+/g,' ').replace(/\b(\d{3,4}p|hd|full|video|download|offic?ial|whatsapp|status|reel|short|final|copy|yt1s|ssstik|snaptik|mp4|mkv|part\d*)\b/gi,' ').replace(/\s+/g,' ').trim();
-if(n.replace(/[^a-z0-9]/gi,'').length<3){box.innerHTML='';return}
+if(!/\p{L}{2}/u.test(n)||/^(?:(?:VID|IMG|WA|PXL|VIDWA|screen recording|screenrecord|instagram|insta|download|received|telegram)\s*)?[\d\s_-]{4,}(?:\s*WA\d+)?$/i.test(n)){box.innerHTML='';return}
+FinderSources.hint(n,'file name',48);
 box.innerHTML='<div class="mem"><b>From the file name:</b> \u201c'+n.replace(/</g,'&lt;')+'\u201d <br><a href="#" id="nhq">search this as the title</a> &nbsp;·&nbsp; <a href="#" id="nhg">search on the web</a></div>';
 document.getElementById('nhq').onclick=function(e){e.preventDefault();document.getElementById('q').value=n;svc(n);document.getElementById('q').scrollIntoView()};
 document.getElementById('nhg').onclick=function(e){e.preventDefault();location.href='https://www.google.com/search?q='+encodeURIComponent(n+' movie')}}
@@ -446,6 +487,6 @@ document.getElementById('acb').onclick=function(){var q=document.getElementById(
 document.getElementById('ac').addEventListener('keydown',function(e){if(e.key==='Enter')document.getElementById('acb').click()});
 showSites();
 showMem();
-aiCard();
+readShare();
 </script>
 </body></html>

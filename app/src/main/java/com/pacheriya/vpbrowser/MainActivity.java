@@ -1946,6 +1946,14 @@ public class MainActivity extends Activity {
                         "\"playbackUrl\":\"([^\"]+)\"",
                         "\"contentUrl\":\"([^\"]+\\.mp4[^\"]*)\"",
                         "(https?:[^\"'\\s]+\\.mp4[^\"'\\s]*)");
+                    // The post's own words (caption, account, hashtags) are the best clue to the original video: hand them to the finder page.
+                    try {
+                        org.json.JSONObject meta = new org.json.JSONObject();
+                        meta.put("t", firstMatch(html, "property=\"og:title\"[^>]*content=\"([^\"]*)\"", "content=\"([^\"]*)\"[^>]*property=\"og:title\"", "<title[^>]*>([^<]*)</title>"));
+                        meta.put("d", firstMatch(html, "property=\"og:description\"[^>]*content=\"([^\"]*)\"", "content=\"([^\"]*)\"[^>]*property=\"og:description\"", "name=\"description\"[^>]*content=\"([^\"]*)\""));
+                        final String mj = meta.toString(); final WebView mw = t.wv;
+                        ui.post(new Runnable() { public void run() { try { mw.evaluateJavascript("window.__vpMeta&&window.__vpMeta(" + id + "," + org.json.JSONObject.quote(mj) + ")", null); } catch (Throwable e) {} } });
+                    } catch (Throwable e) { /* ignore */ }
                     if (found != null) found = found.replace("\\u0026", "&").replace("\\/", "/");
                 } catch (Throwable e) { found = ""; }
                 finderVid(id, found == null ? "" : found);

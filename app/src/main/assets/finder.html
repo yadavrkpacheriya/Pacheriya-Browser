@@ -215,6 +215,25 @@ function showMem(){var box=document.getElementById('mem');var h=LS('solved',[]);
 box.innerHTML='<div class="mem"><b>Found before</b> (tap to check where to watch):<br>'+h.map(function(x){return '<a href="#" data-n="'+encodeURIComponent(x.n)+'">'+x.n.replace(/</g,'&lt;')+'</a>'}).join(' &nbsp;·&nbsp; ')+'</div>';
 Array.prototype.forEach.call(box.querySelectorAll('a'),function(a){a.onclick=function(e){e.preventDefault();var n=decodeURIComponent(a.dataset.n);document.getElementById('q').value=n;svc(n);document.getElementById('q').scrollIntoView()}})}
 
+/* ---- clues from the post itself: caption, account and hashtags usually name the original video ---- */
+function dec(x){var t=document.createElement('textarea');t.innerHTML=x||'';return t.value}
+window.__vpMeta=function(id,j){try{showPostClues(JSON.parse(j))}catch(e){}};
+function showPostClues(m){
+ var title=dec(m.t).trim(),desc=dec(m.d).trim(),txt=(title+' '+desc).trim();if(txt.length<4)return;
+ var box=document.getElementById('postclues');if(!box){box=document.createElement('div');box.id='postclues';var c=document.getElementById('clues');c.parentNode.insertBefore(box,c);}
+ var chips=[],seen={};function add(label,q){if(!label||seen[label])return;seen[label]=1;chips.push([label,q])}
+ (txt.match(/@[A-Za-z0-9_.]{3,30}/g)||[]).slice(0,6).forEach(function(h){add(h,h.slice(1)+' full video')});
+ (txt.match(/#[^\s#@.,!?"']{3,40}/g)||[]).slice(0,10).forEach(function(h){add(h,h.slice(1).replace(/([a-z])([A-Z])/g,'$1 $2')+' full video')});
+ /* the caption text itself, minus the "123 likes, 4 comments - name on date:" part Instagram adds in front */
+ var cap=desc.replace(/^[\d.,KkMm]+\s+likes?,\s*[\d.,KkMm]+\s+comments?\s*-\s*/,'').replace(/^[^:]{0,80}:\s*/,'').replace(/[#@]\S+/g,' ').replace(/["“”]/g,'').replace(/\s+/g,' ').trim();
+ if(cap.length>12)add('Search the caption',cap.slice(0,120));
+ if(title.length>6)add('Search the post title',title.replace(/\s+on Instagram.*$/i,'').slice(0,100)+' full video');
+ box.innerHTML='<div class="fr" style="border:1px solid #E2B33C"><b>⭐ From the post itself</b><br><span style="font-size:12px;color:#9aa">The account, hashtags and caption usually name the original. Tap one to search:</span><div class="cap" style="font-size:12.5px;color:#ccc;margin:8px 0;max-height:74px;overflow:auto"></div><div class="row"></div></div>';
+ box.querySelector('.cap').textContent=txt.slice(0,400);
+ var row=box.querySelector('.row');
+ chips.forEach(function(c){var b=document.createElement('button');b.className='b p';b.textContent=c[0];b.onclick=function(){location.href='https://www.google.com/search?q='+encodeURIComponent(c[1])};row.appendChild(b)});
+}
+
 /* ---- find by pasted video link ---- */
 function startFromVideoUrl(vurl){
  out.innerHTML='';frames=[];bestBlob=null;lastUrl='';st.textContent='Loading the video…';

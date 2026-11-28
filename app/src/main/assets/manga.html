@@ -113,7 +113,25 @@ function otherSites(q){
   b.style.cssText='flex:none;background:#26262f;color:#E2B33C;border-radius:14px;padding:7px 12px;font-size:12px;text-decoration:none';
   b.onclick=function(e){e.preventDefault();try{VPApp.histAdd('Manga search: '+q,location.href)}catch(x){}location.href=s[1]};
   wrap.appendChild(b)});
- return wrap;
+ var box=document.createElement('div');box.appendChild(wrap);
+ /* every manga / comic / webtoon site saved on the Home page (non-18+ lists): one tap searches that site for the same words */
+ try{
+  var cats=JSON.parse(VPApp.prefGet('cats')||'[]'),seen={},list=[];
+  SITES.forEach(function(x){try{seen[new URL(x[1]).hostname.replace(/^www\./,'')]=1}catch(e){}});
+  cats.forEach(function(c){if(c.a||!/manga|manhwa|manhua|comic|webtoon|raw|colou?r/i.test(c.n||''))return;
+   (c.s||[]).forEach(function(x){var h=String(x.u||'').replace(/^https?:\/\//,'').replace(/\/.*$/,'').replace(/^www\./,'');if(!h||seen[h])return;seen[h]=1;list.push([x.t||h,h])})});
+  if(list.length){
+   var d=document.createElement('details');d.style.cssText='margin:0 2px 12px;background:#17171e;border-radius:10px;padding:8px 10px';
+   var sm=document.createElement('summary');sm.textContent='Search all '+list.length+' manga & comic sites from your Home list';sm.style.cssText='color:#E2B33C;font-size:13px';d.appendChild(sm);
+   var g=document.createElement('div');g.style.cssText='display:flex;flex-wrap:wrap;gap:6px;margin-top:8px';
+   list.forEach(function(x){var b=document.createElement('a');b.textContent=x[0];b.href='#';
+    b.style.cssText='background:#26262f;color:#ddd;border-radius:14px;padding:6px 11px;font-size:12px;text-decoration:none';
+    b.onclick=function(e){e.preventDefault();try{VPApp.histAdd('Manga search: '+q,location.href)}catch(z){}location.href='https://www.google.com/search?q='+eq+'+site:'+x[1]};
+    g.appendChild(b)});
+   d.appendChild(g);box.appendChild(d);
+  }
+ }catch(e){}
+ return box;
 }
 function library(){$('#bar').style.display='none';var l=LS('lib',[]),v=$('#v');v.innerHTML='<h2>Library</h2>';if(!l.length)return v.insertAdjacentHTML('beforeend','<div class="msg">Nothing saved yet. Open a manga and tap Add to library.</div>');grid(l.map(function(x){return{id:x.id,tt:x.t,cv:x.c,attributes:{title:{en:x.t}}}}),v)}
 function detail(id){$('#bar').style.display='none';msg('Loading...');

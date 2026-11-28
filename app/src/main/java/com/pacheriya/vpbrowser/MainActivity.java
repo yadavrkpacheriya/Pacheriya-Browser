@@ -2980,6 +2980,10 @@ public class MainActivity extends Activity {
                 Uri u = (Uri) i.getParcelableExtra(Intent.EXTRA_STREAM);
                 if (u != null) return "vid:" + u.toString();
             }
+            if (type != null && type.startsWith("image/")) {   // a photo / screenshot shared in: search it like a frame
+                Uri u = (Uri) i.getParcelableExtra(Intent.EXTRA_STREAM);
+                if (u != null) return "img:" + u.toString();
+            }
             String txt = i.getStringExtra(Intent.EXTRA_TEXT);
             if (txt != null) {
                 java.util.regex.Matcher m = java.util.regex.Pattern.compile("https?://\\S+").matcher(txt);
@@ -2993,7 +2997,9 @@ public class MainActivity extends Activity {
     private void openFinderWith(String payload) {
         if (cur == null) return;
         String frag;
-        if (payload.startsWith("vid:")) {
+        if (payload.startsWith("img:")) {
+            frag = "#img=" + Uri.encode(payload.substring(4));
+        } else if (payload.startsWith("vid:")) {
             // grant the WebView read access to the shared video and hand it the content URI
             Uri u = Uri.parse(payload.substring(4));
             try { grantUriPermission(getPackageName(), u, Intent.FLAG_GRANT_READ_URI_PERMISSION); } catch (Throwable e) {}

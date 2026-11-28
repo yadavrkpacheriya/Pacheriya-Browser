@@ -21,7 +21,7 @@ p{color:#aaa;font-size:13.5px;line-height:1.45}
 </style></head><body>
 <h2>Find the full video</h2>
 <p>Pick the clip (10-30 seconds). The app reads any name on screen, picks the clearest frame, and searches automatically to find the movie or the full video. If the first search finds nothing, tap “search another engine” or “try a different frame” below.</p>
-<label class="pick">Choose the clip &amp; find it<input id="f" type="file" accept="video/*" style="display:none"></label>
+<label class="pick">Choose a clip or a photo &amp; find it<input id="f" type="file" accept="video/*,image/*" style="display:none"></label>
 <div class="mem" style="margin:10px 0">
 <b>Or paste a video link</b> (Instagram, Twitter/X, TikTok, Facebook, a direct .mp4…):
 <div class="find" style="margin:8px 0 0"><input id="lk" placeholder="paste the video/reel link" autocomplete="off"><button id="lkb">Find</button></div>
@@ -344,6 +344,25 @@ function showPostClues(m){
  chips.forEach(function(c){var b=document.createElement('button');b.className='b p';b.textContent=c[0];b.onclick=function(){location.href='https://www.google.com/search?q='+encodeURIComponent(c[1])};row.appendChild(b)});
 }
 
+/* ---- find from a PHOTO or screenshot: search the picture itself (Google Lens etc.) and read any text on it ---- */
+function startFromImage(blob){
+ out.innerHTML='';frames=[];bestBlob=null;lastUrl='';clipSrc=null;st.textContent='Reading the photo…';
+ var db=document.getElementById('dlgbox');if(db)db.innerHTML='';
+ var im=new Image();
+ im.onload=function(){
+  var s=Math.min(1,1600/Math.max(im.naturalWidth,im.naturalHeight)),c=document.createElement('canvas');c.width=Math.round(im.naturalWidth*s);c.height=Math.round(im.naturalHeight*s);
+  c.getContext('2d').drawImage(im,0,0,c.width,c.height);
+  c.toBlob(function(b){
+   if(!b){st.textContent='This photo could not be read. Try another one.';return}
+   frames=[{b:b,s:1}];bestBlob=b;
+   st.innerHTML='Tap <b>Google Lens</b> under the photo to find videos and pages showing the same picture. On the Lens page you can crop to one part and use “Exact matches”.';
+   card(b);showTextClues();
+  },'image/jpeg',0.92);
+ };
+ im.onerror=function(){st.textContent='This file could not be opened as a photo.'};
+ im.src=URL.createObjectURL(blob);
+}
+
 /* ---- find by pasted video link ---- */
 function startFromVideoUrl(vurl){
  out.innerHTML='';frames=[];bestBlob=null;lastUrl='';st.textContent='Loading the video…';
@@ -377,12 +396,15 @@ document.getElementById('lk').addEventListener('keydown',function(e){if(e.key===
 /* auto-start when a video or link was SHARED into the app (Telegram, Gallery, Instagram share → this page) */
 (function(){
  var h=location.hash||'';
- var mV=h.match(/[#&]vid=([^&]+)/),mL=h.match(/[#&]lnk=([^&]+)/);
+ var mV=h.match(/[#&]vid=([^&]+)/),mL=h.match(/[#&]lnk=([^&]+)/),mI=h.match(/[#&]img=([^&]+)/);
+ if(mI){try{var iu=decodeURIComponent(mI[1]);st.textContent='Reading the shared photo…';var iid=++dlgN;
+  dlgCbs[iid]=function(b){if(!b){st.textContent='Could not read the shared photo. Use “Choose a clip or a photo” instead.';return}var bin=atob(b),u8=new Uint8Array(bin.length);for(var i=0;i<bin.length;i++)u8[i]=bin.charCodeAt(i);startFromImage(new Blob([u8]))};
+  VPApp.clipBytes(iid,iu)}catch(e){st.textContent='Could not read the shared photo.'}return}
  if(mV){try{var u=decodeURIComponent(mV[1]);st.textContent='Reading the shared video…';startFromVideoUrl(u);}catch(e){}}
  else if(mL){try{var lk=decodeURIComponent(mL[1]);document.getElementById('lk').value=lk;AI.link=lk;st.textContent='Reading the shared link…';resolveVideoUrl(lk,function(vurl){if(vurl)startFromVideoUrl(vurl);else st.innerHTML='Couldn’t read that shared link (may be private). Open the post, play it, then use “Choose the clip”.';});}catch(e){}}
 })();
 
-document.getElementById('f').onchange=function(){var f=this.files[0];if(!f)return;out.innerHTML='';frames=[];bestBlob=null;lastUrl='';st.textContent='Reading the clip…';
+document.getElementById('f').onchange=function(){var f=this.files[0];if(!f)return;if(/^image\//.test(f.type||'')||/\.(jpe?g|png|webp|gif|heic)$/i.test(f.name||'')){startFromImage(f);return}out.innerHTML='';frames=[];bestBlob=null;lastUrl='';st.textContent='Reading the clip…';
 nameHint(f.name);clipSrc={file:f};AI.said=[];dlgCard();
 v.src=URL.createObjectURL(f);v.onloadedmetadata=function(){var d=isFinite(v.duration)&&v.duration>0?v.duration:10;soundCard();grab([0.1,0.25,0.4,0.55,0.7,0.85].map(function(p){return Math.max(0.1,d*p)}),0)};
 v.onerror=function(){st.textContent='This file could not be read as a video. Try another clip.'}};
